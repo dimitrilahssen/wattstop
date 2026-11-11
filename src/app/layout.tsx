@@ -8,7 +8,13 @@ export const metadata: Metadata = {
   description: "Recharge de véhicules électriques entre particuliers, sans borne connectée.",
   applicationName: "WattStop",
   appleWebApp: { capable: true, title: "WattStop", statusBarStyle: "black-translucent" },
-  icons: { icon: "/icons/icon.svg", apple: "/icons/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

@@ -1,8 +1,8 @@
 /* WattStop service worker — offline shell + cache des assets statiques. */
-const VERSION = "wattstop-v1";
+const VERSION = "wattstop-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline";
-const PRECACHE = [OFFLINE_URL, "/icons/icon.svg", "/manifest.webmanifest"];
+const PRECACHE = [OFFLINE_URL, "/icons/icon.svg", "/icons/icon-192.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((c) => c.addAll(PRECACHE)));

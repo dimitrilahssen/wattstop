@@ -21,3 +21,19 @@
 html, body { @apply bg-ink-900 text-white antialiased; }
 /* Safe areas iOS en mode standalone */
 body { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ---------- MapLibre : marqueurs et popups WattStop ---------- */
+.ws-marker {
+  @apply cursor-pointer rounded-full border-2 border-ink-900 bg-brand-500 px-2.5 py-1 text-xs font-bold whitespace-nowrap text-ink-900 shadow-lg hover:bg-brand-400 focus-visible:outline-2 focus-visible:outline-white;
+}
+/* Sélecteurs doublés pour passer devant le CSS de MapLibre (chargé après) */
+.maplibregl-popup .maplibregl-popup-content {
+  @apply rounded-xl bg-ink-900 p-3 text-white shadow-xl ring-1 ring-white/15;
+}
+.maplibregl-popup[class*="anchor-bottom"] .maplibregl-popup-tip { border-top-color: var(--color-ink-900); }
+.maplibregl-popup[class*="anchor-top"] .maplibregl-popup-tip { border-bottom-color: var(--color-ink-900); }
+.maplibregl-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--color-ink-900); }
+.maplibregl-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--color-ink-900); }
+.ws-popup-title { @apply font-semibold; }
+.ws-popup-meta { @apply mt-0.5 text-xs text-white/60; }
+.ws-popup-link { @apply mt-2 inline-block rounded text-sm font-semibold text-brand-400 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-400; }

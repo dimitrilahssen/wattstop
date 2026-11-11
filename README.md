@@ -23,11 +23,21 @@ Dans Supabase > Auth > URL Configuration, ajouter `http://localhost:3000/auth/ca
 ## Parcours
 | Étape | Route | Mécanisme |
 |---|---|---|
-| Trouver un spot | `/map` | RPC `nearby_spots` (PostGIS `ST_DWithin`, tri KNN) |
+| Trouver un spot | `/map` | Carte MapLibre + vue liste, RPC `nearby_spots` (PostGIS `ST_DWithin`, tri KNN), « Rechercher dans cette zone » |
 | Réserver | `/spots/[id]` | `insert` dans `bookings` (le trigger impose hôte, prix et statut) |
 | Accepter / refuser | `/bookings` | RPC `respond_booking` / `cancel_booking` |
 | Imprimer le QR | `/host` | RPC `get_spot_qr_key` / `regenerate_spot_qr_key`, rendu avec `qrcode.react` |
 | Scan sur place | `/s/[qrKey]` | RPC `resolve_qr` → `check_in` → `check_out` |
+
+## Carte
+Les tuiles viennent d'[OpenFreeMap](https://openfreemap.org) (style `dark`), service gratuit et sans clé API. Pour en changer, définissez `NEXT_PUBLIC_MAP_STYLE_URL` (MapTiler, Stadia, style auto-hébergé…).
+
+## Icônes PWA
+Les sources sont `public/icons/icon.svg` (coins arrondis) et `public/icons/maskable.svg` (fond plein, zone de sécurité Android). Après une modification :
+```bash
+npm run icons
+```
+Le script génère `icon-192/512.png`, `maskable-192/512.png`, `apple-touch-icon.png` et `favicon-32.png`.
 
 ## Modèle de sécurité
 - **La clé QR n'est jamais exposée par l'API REST** : des privilèges par colonne excluent `spots.qr_key`. On ne peut donc la lire qu'en étant l'hôte (RPC) ou en scannant physiquement le QR, ce qui sert de preuve de présence.
@@ -38,9 +48,9 @@ Dans Supabase > Auth > URL Configuration, ajouter `http://localhost:3000/auth/ca
 - Le prix est figé au moment de la réservation (`price_per_kwh`, posé par trigger).
 
 ## Pistes suivantes
-- Vue carte (MapLibre GL ou Leaflet) branchée sur `nearby_spots`
 - Paiement : Stripe Connect (pré-autorisation au check-in, capture au check-out)
-- Icônes PNG 192/512 et splash screens iOS
+- Splash screens iOS
+- Clustering des marqueurs au-delà de ~100 spots visibles
 - Expiration automatique des réservations `pending` ou `confirmed` passées (pg_cron)
 - Notifications push (Web Push) déclenchées par Realtime sur `bookings`
 - Photo du compteur du véhicule au check-out, en cas de litige
