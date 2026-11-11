@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f0fdf4;
+  --color-brand-400: #4ade80;
+  --color-brand-500: #22c55e;
+  --color-brand-600: #16a34a;
+  --color-ink-900: #0b1220;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Tailwind v4 : classes réutilisables déclarées comme utilities */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold transition active:scale-[.98] disabled:opacity-50;
+}
+@utility btn-primary { @apply btn bg-brand-500 text-ink-900 hover:bg-brand-400; }
+@utility btn-ghost { @apply btn border border-white/15 text-white hover:bg-white/5; }
+@utility card { @apply rounded-2xl border border-white/10 bg-white/5 p-4; }
+@utility input { @apply w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-white placeholder:text-white/40 focus:border-brand-500 focus:outline-none; }
+
+html, body { @apply bg-ink-900 text-white antialiased; }
+/* Safe areas iOS en mode standalone */
+body { padding-bottom: env(safe-area-inset-bottom); }
