@@ -23,7 +23,13 @@ export function SpotQr({ spotId, title }: { spotId: string; title: string }) {
       <div className="rounded-xl bg-white p-4 print:p-0">
         <QRCodeSVG value={qrUrl(key)} size={220} level="M" marginSize={1} title={`WattStop – ${title}`} />
       </div>
-      <p className="text-center text-xs text-white/50">Scannez avec l&apos;appareil photo pour démarrer/terminer la recharge.</p>
+      {/* Code de secours, saisissable dans /scan (espaces tolérés) */}
+      <p className="text-center font-mono text-sm tracking-wider" aria-label="Code de secours">
+        {key.match(/.{1,4}/g)?.join(" ")}
+      </p>
+      <p className="text-center text-xs text-white/50">
+        Scannez avec l&apos;appareil photo ou l&apos;onglet Scanner de WattStop pour démarrer/terminer la recharge.
+      </p>
       <div className="flex w-full gap-2">
         <button className="btn-ghost flex-1 py-2" onClick={() => window.print()}>Imprimer</button>
         <button className="btn-ghost flex-1 py-2" onClick={() => load(true)}>Régénérer</button>

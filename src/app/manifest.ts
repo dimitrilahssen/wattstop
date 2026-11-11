@@ -21,6 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
     ],
     shortcuts: [
+      { name: "Scanner un spot", url: "/scan" },
       { name: "Trouver une borne", url: "/map" },
       { name: "Mes réservations", url: "/bookings" },
     ],
