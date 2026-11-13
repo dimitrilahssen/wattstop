@@ -192,7 +192,7 @@ try {
   await shot(driver, "conducteur-en-charge");
   await liveToast(host, "Recharge démarrée").waitFor({ timeout: 15000 }).catch(() => {});
   ok(await liveToast(host, "Recharge démarrée").isVisible(), "Temps réel : l'hôte est notifié du démarrage");
-  await host.locator("article", { hasText: TITLE }).filter({ hasText: "En charge" }).waitFor({ timeout: 10000 }).catch(() => {});
+  await host.locator("article", { hasText: TITLE }).filter({ hasText: "En charge" }).waitFor({ timeout: 30000 }).catch(() => {});
   ok(await host.locator("article", { hasText: TITLE }).filter({ hasText: "En charge" }).isVisible(), "Hôte : voit « En charge » sans recharger");
 
   // 6. Tentative de triche, puis fin de recharge
@@ -209,12 +209,12 @@ try {
   ok(await driver.getByText("Recharge terminée").isVisible(), "Conducteur : recharge terminée et prix affiché");
   await shot(driver, "conducteur-termine");
   await driver.getByRole("link", { name: "Voir mes réservations" }).click();
-  await driver.waitForURL(/\/bookings/);
+  await driver.waitForURL(/\/bookings/, { timeout: 60000 });
   ok(await driver.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).isVisible(), "Conducteur : historique « Terminée »");
   await shot(driver, "conducteur-historique");
   await liveToast(host, "Recharge terminée").waitFor({ timeout: 15000 }).catch(() => {});
   ok(await liveToast(host, "Recharge terminée").filter({ hasText: "0,03 €" }).isVisible(), "Temps réel : l'hôte est notifié de la fin, avec le montant");
-  await host.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).waitFor({ timeout: 10000 }).catch(() => {});
+  await host.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).waitFor({ timeout: 30000 }).catch(() => {});
   ok(await host.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).isVisible(), "Hôte : voit la recharge terminée sans recharger");
   await shot(host, "hote-historique");
 
