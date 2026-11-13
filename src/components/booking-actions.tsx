@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Booking } from "@/types/db";
 import { markSelfAction } from "@/lib/live-store";
+import { callPayments, paymentsEnabled } from "@/lib/payments";
 
 export function BookingActions({ booking, asHost }: { booking: Booking; asHost: boolean }) {
   const router = useRouter();
@@ -18,8 +19,10 @@ export function BookingActions({ booking, asHost }: { booking: Booking; asHost: 
     markSelfAction(booking.id, target);
     const { error } = await createClient().rpc(fn, args);
     setBusy(false);
-    if (error) setError(error.message);
-    else router.refresh();
+    if (error) return setError(error.message);
+    // Une réservation annulée ne doit pas garder d'argent bloqué sur la carte
+    if (fn === "cancel_booking" && paymentsEnabled) await callPayments("release", booking.id).catch(() => {});
+    router.refresh();
   }
 
   const canCancel = booking.status === "pending" || booking.status === "confirmed";

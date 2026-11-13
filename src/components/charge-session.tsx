@@ -1,10 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Booking, ResolvedQr } from "@/types/db";
 import { CONNECTOR_LABELS, dateTime, eur, kwh as fmtKwh } from "@/lib/format";
+import { callPayments, centsToEur, paymentsEnabled, type PaymentResult } from "@/lib/payments";
+import { PaymentStep } from "@/components/payment-step";
 
 export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: ResolvedQr }) {
   const router = useRouter();
@@ -14,6 +16,19 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
   const [kwh, setKwh] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Paiement : null = inconnu (chargement), true = montant bloqué sur la carte
+  const [paid, setPaid] = useState<boolean | null>(paymentsEnabled ? null : true);
+  const [charge, setCharge] = useState<PaymentResult | null>(null);
+
+  useEffect(() => {
+    if (!paymentsEnabled || !booking || booking.status !== "confirmed") return;
+    createClient()
+      .from("payments")
+      .select("status")
+      .eq("booking_id", booking.id)
+      .maybeSingle()
+      .then(({ data }) => setPaid(data?.status === "authorized"));
+  }, [booking]);
 
   async function checkIn() {
     setBusy(true); setError(null);
@@ -30,6 +45,10 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
     setBusy(false);
     if (error) return setError(error.message);
     setResult(data as Booking);
+    if (paymentsEnabled) {
+      // Prélève le montant réel (calculé par la base) et libère le reste
+      callPayments("capture", (data as Booking).id).then(setCharge, (e: Error) => setError(e.message));
+    }
     // Vide le cache de navigation : « Voir mes réservations » doit afficher le statut « Terminée »
     router.refresh();
   }
@@ -51,6 +70,17 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
           <p className="text-4xl">✅</p>
           <p className="mt-2 text-lg font-semibold">Recharge terminée</p>
           <p className="text-muted">{fmtKwh(result.energy_kwh ?? 0)} · <strong>{eur(result.total_price ?? 0)}</strong></p>
+          {paymentsEnabled && (
+            <p className="mt-2 text-sm" data-testid="charge-result">
+              {!charge
+                ? "Paiement en cours de finalisation…"
+                : charge.status === "captured"
+                  ? `💳 ${eur(centsToEur(charge.amount_cents ?? 0))} prélevés, le reste du montant bloqué est libéré.`
+                  : charge.status === "waived"
+                    ? "💳 Moins de 0,50 € : rien n'est prélevé, le montant bloqué est libéré."
+                    : "💳 Paiement en attente de finalisation."}
+            </p>
+          )}
           <Link href="/bookings" className="btn-ghost mt-4 w-full">Voir mes réservations</Link>
         </div>
       ) : !booking ? (
@@ -63,7 +93,11 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
       ) : booking.status === "confirmed" ? (
         <div className="card grid gap-3">
           <p className="text-sm text-muted">Créneau : {dateTime(booking.start_at)} → {dateTime(booking.end_at)}</p>
-          <button className="btn-primary" disabled={busy} onClick={checkIn}>⚡ Démarrer la recharge</button>
+          {paid === false ? (
+            <PaymentStep bookingId={booking.id} onAuthorized={() => setPaid(true)} />
+          ) : (
+            <button className="btn-primary" disabled={busy || paid === null} onClick={checkIn}>⚡ Démarrer la recharge</button>
+          )}
         </div>
       ) : (
         <form onSubmit={checkOut} className="card grid gap-3">

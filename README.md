@@ -49,6 +49,18 @@ Le script génère `icon-192/512.png`, `maskable-192/512.png`, `apple-touch-icon
 - **Anti-fraude sur les kWh déclarés** : la valeur est plafonnée à `puissance × durée réelle × 1,05`.
 - Le prix est figé au moment de la réservation (`price_per_kwh`, posé par trigger).
 
+## Paiement (Stripe)
+Pré-autorisation au démarrage, prélèvement du montant réel à la fin. Les paiements arrivent sur le compte Stripe de la plateforme (commission 0 %).
+
+1. **Au démarrage** (`/s/[qrKey]`), le conducteur valide sa carte : la fonction `payments` bloque `puissance × durée restante du créneau × tarif × 1,05` (minimum 0,50 €), sans le prélever.
+2. **Check-in** : la base refuse le démarrage tant que le paiement n'est pas `authorized` (si `app_settings.payments_required` est vrai).
+3. **Check-out** : la fonction prélève `total_price` calculé par la base (au plus le montant bloqué) et libère le reste. Sous 0,50 € (minimum Stripe), rien n'est prélevé.
+4. **Annulation** avant démarrage : le blocage est libéré.
+
+Sécurité : la clé secrète Stripe n'existe que dans les secrets de l'Edge Function `supabase/functions/payments`. La table `payments` n'est modifiable que par cette fonction (aucun droit d'écriture côté navigateur), et les montants sont toujours calculés à partir de la base, jamais envoyés par le client.
+
+Mise en place : migration `20261114000000_payments.sql`, déploiement de la fonction `payments`, secret `STRIPE_SECRET_KEY`, puis `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` dans `.env.local`, et enfin `update public.app_settings set payments_required = true;`.
+
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
 
@@ -67,7 +79,8 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de test sont désactivés : ils disparaissent de la carte publique mais l'historique reste. Les recharges attendent 70 s avant le check-out, car le plafond anti-fraude dépend du temps écoulé (réglable avec `E2E_CHARGE_SECONDS`).
 
 ## Pistes suivantes
-- Paiement : Stripe Connect (pré-autorisation au check-in, capture au check-out)
+- Reversement automatique aux hôtes (Stripe Connect) et commission éventuelle
+- Libération automatique des montants bloqués pour les réservations « non honorées » (aujourd'hui : expiration Stripe au bout de 7 jours)
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles
 - Clôture des recharges oubliées (`active` sans check-out bien après la fin du créneau)

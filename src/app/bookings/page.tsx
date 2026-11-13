@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Booking } from "@/types/db";
 import { dateTime, eur, kwh } from "@/lib/format";
 import { BookingActions } from "@/components/booking-actions";
+import { paymentsEnabled, type PaymentStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
 
@@ -40,14 +41,30 @@ export default async function BookingsPage() {
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
   const { data } = await supabase
     .from("bookings")
-    .select("*, spot:spots(title, address), driver:profiles!bookings_driver_id_fkey(full_name)")
+    .select("*, spot:spots(title, address), driver:profiles!bookings_driver_id_fkey(full_name), payment:payments(status, amount_authorized_cents, amount_captured_cents)")
     .order("start_at", { ascending: false })
     .limit(50);
 
   const bookings = (data ?? []) as (Booking & {
     spot: { title: string; address: string } | null;
     driver: { full_name: string | null } | null;
+    payment: { status: PaymentStatus; amount_authorized_cents: number; amount_captured_cents: number | null } | null;
   })[];
+
+  // Filet de sécurité : une recharge terminée dont le montant est encore seulement bloqué
+  // (page fermée trop tôt…) est prélevée maintenant. Le montant vient de la base, pas du client.
+  const toCapture = paymentsEnabled ? bookings.filter((b) => b.status === "completed" && b.payment?.status === "authorized") : [];
+  if (toCapture.length) {
+    await Promise.all(toCapture.map((b) => supabase.functions.invoke("payments", { body: { action: "capture", booking_id: b.id } })));
+    const { data: fresh } = await supabase
+      .from("payments")
+      .select("booking_id, status, amount_authorized_cents, amount_captured_cents")
+      .in("booking_id", toCapture.map((b) => b.id));
+    for (const p of fresh ?? []) {
+      const b = bookings.find((x) => x.id === p.booking_id);
+      if (b) b.payment = p as (typeof bookings)[number]["payment"];
+    }
+  }
 
   return (
     <section className="grid gap-4">
@@ -76,10 +93,34 @@ export default async function BookingsPage() {
             {b.status === "completed" && b.total_price != null && (
               <p className="text-sm">{kwh(b.energy_kwh ?? 0)} · <strong>{eur(b.total_price)}</strong></p>
             )}
+            {b.payment && <PaymentLine payment={b.payment} asHost={asHost} />}
             <BookingActions booking={b} asHost={asHost} />
           </article>
         );
       })}
     </section>
+  );
+}
+
+function PaymentLine({
+  payment: p,
+  asHost,
+}: {
+  payment: { status: PaymentStatus; amount_authorized_cents: number; amount_captured_cents: number | null };
+  asHost: boolean;
+}) {
+  const amount = (cents: number | null) => eur((cents ?? 0) / 100);
+  const text: Record<PaymentStatus, string> = {
+    requires_authorization: "Carte pas encore validée",
+    authorized: `${amount(p.amount_authorized_cents)} bloqués sur la carte (pas encore prélevés)`,
+    captured: asHost ? `${amount(p.amount_captured_cents)} encaissés` : `${amount(p.amount_captured_cents)} payés`,
+    waived: "Moins de 0,50 € : rien n'a été prélevé",
+    canceled: "Montant bloqué libéré, rien n'a été prélevé",
+    failed: "Échec du paiement",
+  };
+  return (
+    <p className="text-sm text-muted" data-testid="payment-line">
+      💳 {text[p.status]}
+    </p>
   );
 }
