@@ -16,7 +16,7 @@ cp .env.example .env.local   # renseigner les clés Supabase
 npm run dev
 ```
 
-Base de données : exécuter `supabase/migrations/20261111000000_init_wattstop.sql`, soit dans le SQL Editor de Supabase, soit avec `supabase db push`.
+Base de données : exécuter les fichiers de `supabase/migrations/` dans l'ordre de leur nom, soit dans le SQL Editor de Supabase, soit avec `supabase db push`.
 
 Dans Supabase > Auth > URL Configuration, ajouter `http://localhost:3000/auth/callback` (puis l'URL de prod) dans les Redirect URLs.
 
@@ -47,7 +47,25 @@ Le script génère `icon-192/512.png`, `maskable-192/512.png`, `apple-touch-icon
 - **Anti-fraude sur les kWh déclarés** : la valeur est plafonnée à `puissance × durée réelle × 1,05`.
 - Le prix est figé au moment de la réservation (`price_per_kwh`, posé par trigger).
 
+## Tests de bout en bout
+Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
+
+| Commande | Ce qui est testé | Durée |
+|---|---|---|
+| `npm run test:e2e:api` | Le parcours hôte → conducteur via l'API, plus ~15 tentatives de triche qui doivent échouer (lire la clé QR d'un autre, forcer un prix, s'auto-confirmer, déclarer trop de kWh…) | ~1 min 30 |
+| `npm run test:e2e:ui` | Le même parcours dans un vrai navigateur, écran par écran, avec deux sessions (hôte et conducteur). Captures dans `tests/e2e/screenshots/` | ~2 min 30 |
+| `npm run test:e2e` | Les deux à la suite | ~4 min |
+
+**Mise en place (une seule fois)**
+1. Créer deux comptes dédiés dans Supabase > Authentication > Users > *Add user*, en cochant *Auto Confirm User*. Astuce Gmail : `vous+hote@gmail.com` et `vous+conducteur@gmail.com` arrivent dans votre boîte.
+2. Les renseigner dans `.env.local` (jamais commité) : `E2E_HOST_EMAIL`, `E2E_DRIVER_EMAIL`, `E2E_PASSWORD` (voir `.env.example`).
+3. Installer le navigateur de test : `npx playwright install chromium`.
+4. Pour le test navigateur, l'app doit tourner : `npm run dev` dans un autre terminal.
+
+Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de test sont désactivés : ils disparaissent de la carte publique mais l'historique reste. Les recharges attendent 70 s avant le check-out, car le plafond anti-fraude dépend du temps écoulé (réglable avec `E2E_CHARGE_SECONDS`).
+
 ## Pistes suivantes
+- Bouton « Désactiver / réactiver » un spot dans Mes spots (la base le permet déjà)
 - Paiement : Stripe Connect (pré-autorisation au check-in, capture au check-out)
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles

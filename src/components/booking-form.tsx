@@ -31,8 +31,9 @@ export function BookingForm({ spotId, driverId }: { spotId: string; driverId: st
       setError(error.code === "23P01" ? "Ce créneau est déjà réservé." : error.message);
       return;
     }
+    // Pas de router.refresh() ici : lancé juste après push, il peut annuler la navigation
+    // (on reste sur la fiche du spot). /bookings est dynamique, push la charge déjà à jour.
     router.push("/bookings");
-    router.refresh();
   }
 
   return (

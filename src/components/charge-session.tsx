@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Booking, ResolvedQr } from "@/types/db";
 import { CONNECTOR_LABELS, dateTime, eur, kwh as fmtKwh } from "@/lib/format";
 
 export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: ResolvedQr }) {
+  const router = useRouter();
   const { spot, is_host } = initial;
   const [booking, setBooking] = useState(initial.booking);
   const [result, setResult] = useState<Booking | null>(null);
@@ -28,6 +30,8 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
     setBusy(false);
     if (error) return setError(error.message);
     setResult(data as Booking);
+    // Vide le cache de navigation : « Voir mes réservations » doit afficher le statut « Terminée »
+    router.refresh();
   }
 
   return (
