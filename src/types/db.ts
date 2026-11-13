@@ -2,7 +2,17 @@
 
 export type UserRole = "driver" | "host" | "both";
 export type ConnectorType = "type2" | "type2_cable" | "domestic_socket" | "ccs" | "chademo";
-export type BookingStatus = "pending" | "confirmed" | "active" | "completed" | "cancelled" | "rejected";
+export type BookingStatus =
+  | "pending"
+  | "confirmed"
+  | "active"
+  | "completed"
+  | "cancelled"
+  | "rejected"
+  /** Demande restée sans réponse au début du créneau (tâche planifiée expire_bookings) */
+  | "expired"
+  /** Réservation confirmée, créneau terminé sans démarrage de recharge */
+  | "no_show";
 
 export interface Profile {
   id: string;

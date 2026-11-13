@@ -68,11 +68,38 @@ try {
   const ci = await D.c.rpc("check_in", { p_qr_key: key });
   ok(ci.data?.status === "active", "Conducteur : check-in (début de recharge)", ci.error?.message);
   expectErr(await D.c.rpc("cancel_booking", { p_booking_id: b.id }), "Annulation impossible après check-in");
+  // 6 bis. Expiration : un second spot, pour ne pas chevaucher la recharge en cours
+  const titleB = `${TEST_PREFIX} Garage API expiration ${Date.now().toString().slice(-5)}`;
+  await H.c.from("spots").insert({ host_id: H.id, title: titleB, address: "12 rue de Test, Paris", connector_type: "type2", power_kw: 7.4, price_per_kwh: 0.3, location: "SRID=4326;POINT(2.353 48.857)" });
+  const { data: spotB } = await H.c.from("spots").select("id").eq("title", titleB).single();
+  // a) Demande dont le créneau a déjà commencé (1 min) : l'hôte ne peut plus l'accepter
+  const late = await D.c.from("bookings").insert({ spot_id: spotB.id, driver_id: D.id, start_at: new Date(Date.now() - 60_000).toISOString(), end_at: new Date(Date.now() + 10 * 60_000).toISOString() }).select("id").single();
+  ok(!late.error, "Expiration : demande sur un créneau qui vient de commencer", late.error?.message);
+  const lateAcc = await H.c.rpc("respond_booking", { p_booking_id: late.data?.id, p_accept: true });
+  ok(/expirée/i.test(lateAcc.error?.message ?? ""), "Expiration : l'hôte ne peut plus accepter une demande au créneau commencé", lateAcc.error?.message ?? "ACCEPTÉE (faille)");
+  expectErr(await anon.rpc("expire_bookings"), "Expiration : un visiteur anonyme ne peut pas lancer l'expiration");
+  const ex = await D.c.rpc("expire_bookings");
+  ok(!ex.error, "Expiration : un utilisateur connecté peut la lancer", ex.error?.message ?? "");
+  const lateRow = await D.c.from("bookings").select("status").eq("id", late.data?.id).single();
+  ok(lateRow.data?.status === "expired", "Expiration : demande sans réponse → « expired »", `status=${lateRow.data?.status}`);
+  const free = await D.c.from("bookings").insert({ spot_id: spotB.id, driver_id: D.id, start_at: new Date(Date.now() + 60_000).toISOString(), end_at: new Date(Date.now() + 5 * 60_000).toISOString() }).select("id").single();
+  ok(!free.error, "Expiration : le créneau d'une demande expirée est libéré", free.error?.message);
+  await D.c.rpc("cancel_booking", { p_booking_id: free.data?.id });
+  // b) Réservation confirmée sur un créneau très court, jamais démarrée → « no_show » après la recharge simulée
+  const shortSlot = await D.c.from("bookings").insert({ spot_id: spotB.id, driver_id: D.id, start_at: new Date(Date.now() + 10_000).toISOString(), end_at: new Date(Date.now() + 40_000).toISOString() }).select("id").single();
+  const shortAcc = await H.c.rpc("respond_booking", { p_booking_id: shortSlot.data?.id, p_accept: true });
+  ok(shortAcc.data?.status === "confirmed", "Expiration : réservation courte acceptée (pour le test « non honorée »)", shortAcc.error?.message);
+
   console.log(`… recharge simulée de ${CHARGE_SECONDS} s`);
   await sleep(CHARGE_SECONDS * 1000);
   expectErr(await D.c.rpc("check_out", { p_qr_key: key, p_energy_kwh: 50 }), "Check-out avec 50 kWh refusé (anti-fraude)");
   const co = await D.c.rpc("check_out", { p_qr_key: key, p_energy_kwh: 0.12 });
   ok(co.data?.status === "completed" && Number(co.data?.total_price) === 0.04, "Conducteur : check-out, prix calculé", co.error?.message ?? `${co.data?.energy_kwh} kWh → ${co.data?.total_price} €`);
+  await D.c.rpc("expire_bookings");
+  const noShow = await H.c.from("bookings").select("status").eq("id", shortSlot.data?.id).single();
+  ok(noShow.data?.status === "no_show", "Expiration : confirmée mais jamais démarrée → « no_show »", `status=${noShow.data?.status}`);
+  const stillDone = await D.c.from("bookings").select("status").eq("id", b.id).single();
+  ok(stillDone.data?.status === "completed", "Expiration : une recharge terminée n'est pas touchée");
   const hb = await H.c.from("bookings").select("status,total_price").eq("id", b.id).single();
   ok(hb.data?.status === "completed", "Hôte : voit la recharge terminée", JSON.stringify(hb.data));
 

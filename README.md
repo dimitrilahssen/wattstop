@@ -45,6 +45,7 @@ Le script génère `icon-192/512.png`, `maskable-192/512.png`, `apple-touch-icon
   ⚠️ Conséquence : ne jamais faire `select('*')` sur `spots`. Utiliser `SPOT_COLUMNS` (`src/types/db.ts`).
 - **Les réservations ne peuvent pas être modifiées directement** : il n'y a aucune policy UPDATE ni DELETE. Toutes les transitions passent par des fonctions `SECURITY DEFINER` qui vérifient l'auteur, le statut et la fenêtre horaire.
 - **Pas de double réservation** : une contrainte d'exclusion GiST interdit tout chevauchement de créneaux sur un même spot.
+- **Expiration automatique** (tâche `pg_cron` toutes les 5 min, `expire_bookings()`) : une demande sans réponse au début du créneau passe en `expired`, une réservation confirmée jamais démarrée en `no_show` à la fin du créneau. Les deux libèrent le créneau. L'hôte ne peut plus accepter une demande dont le créneau a commencé.
 - **Anti-fraude sur les kWh déclarés** : la valeur est plafonnée à `puissance × durée réelle × 1,05`.
 - Le prix est figé au moment de la réservation (`price_per_kwh`, posé par trigger).
 
@@ -69,6 +70,6 @@ Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de
 - Paiement : Stripe Connect (pré-autorisation au check-in, capture au check-out)
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles
-- Expiration automatique des réservations `pending` ou `confirmed` passées (pg_cron)
+- Clôture des recharges oubliées (`active` sans check-out bien après la fin du créneau)
 - Notifications push (Web Push) pour prévenir aussi quand l'app est fermée (le temps réel ne marche qu'app ouverte)
 - Photo du compteur du véhicule au check-out, en cas de litige

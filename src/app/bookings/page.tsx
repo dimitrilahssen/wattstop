@@ -12,6 +12,20 @@ const STATUS_LABEL: Record<Booking["status"], string> = {
   completed: "Terminée",
   cancelled: "Annulée",
   rejected: "Refusée",
+  expired: "Expirée",
+  no_show: "Non honorée",
+};
+
+/** Explication affichée sous les statuts posés automatiquement. */
+const STATUS_HINT: Partial<Record<Booking["status"], { host: string; driver: string }>> = {
+  expired: {
+    host: "Demande restée sans réponse au début du créneau.",
+    driver: "L'hôte n'a pas répondu avant le début du créneau. Le créneau est libéré.",
+  },
+  no_show: {
+    host: "Le créneau s'est terminé sans que la recharge démarre.",
+    driver: "Le créneau s'est terminé sans que la recharge démarre.",
+  },
 };
 
 export default async function BookingsPage() {
@@ -19,6 +33,9 @@ export default async function BookingsPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Applique tout de suite les règles d'expiration (la tâche planifiée ne passe que toutes les 5 min)
+  await supabase.rpc("expire_bookings");
 
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
   const { data } = await supabase
@@ -50,6 +67,9 @@ export default async function BookingsPage() {
               <span className="shrink-0 whitespace-nowrap rounded-full bg-soft px-2 py-0.5 text-xs">{STATUS_LABEL[b.status]}</span>
             </div>
             <p className="text-sm text-muted">{dateTime(b.start_at)} → {dateTime(b.end_at)}</p>
+            {STATUS_HINT[b.status] && (
+              <p className="text-sm text-muted">⏰ {STATUS_HINT[b.status]![asHost ? "host" : "driver"]}</p>
+            )}
             {b.driver_note && (
               <p className="rounded-lg bg-soft p-2 text-sm">💬 {asHost ? "" : "Votre message : "}{b.driver_note}</p>
             )}
