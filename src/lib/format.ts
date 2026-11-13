@@ -1,8 +1,13 @@
 export const eur = (n: number) =>
   new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
 
+/** Fuseau explicite : le rendu serveur (UTC en ligne) et le navigateur affichent la même heure. */
+export const APP_TIME_ZONE = "Europe/Paris";
 export const dateTime = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
+  new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short", timeZone: APP_TIME_ZONE }).format(new Date(iso));
+
+export const kwh = (v: number | string) =>
+  `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(Number(v))} kWh`;
 
 export const distance = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 

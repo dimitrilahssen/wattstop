@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Booking, ResolvedQr } from "@/types/db";
-import { CONNECTOR_LABELS, dateTime, eur } from "@/lib/format";
+import { CONNECTOR_LABELS, dateTime, eur, kwh as fmtKwh } from "@/lib/format";
 
 export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: ResolvedQr }) {
   const { spot, is_host } = initial;
@@ -46,7 +46,7 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
         <div className="card text-center">
           <p className="text-4xl">✅</p>
           <p className="mt-2 text-lg font-semibold">Recharge terminée</p>
-          <p className="text-muted">{result.energy_kwh} kWh · <strong>{eur(result.total_price ?? 0)}</strong></p>
+          <p className="text-muted">{fmtKwh(result.energy_kwh ?? 0)} · <strong>{eur(result.total_price ?? 0)}</strong></p>
           <Link href="/bookings" className="btn-ghost mt-4 w-full">Voir mes réservations</Link>
         </div>
       ) : !booking ? (

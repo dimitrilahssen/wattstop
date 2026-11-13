@@ -9,6 +9,7 @@ export function SpotForm({ hostId }: { hostId: string }) {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [published, setPublished] = useState<string | null>(null);
 
   function locate() {
     navigator.geolocation.getCurrentPosition(
@@ -21,9 +22,12 @@ export function SpotForm({ hostId }: { hostId: string }) {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!coords) return setError("Positionnez d'abord le spot.");
-    const f = new FormData(e.currentTarget);
+    // À capturer avant l'await : React remet e.currentTarget à null ensuite
+    const form = e.currentTarget;
+    const f = new FormData(form);
     setLoading(true);
     setError(null);
+    setPublished(null);
     // Pas de .select() : qr_key n'est pas lisible, on liste explicitement les colonnes ailleurs.
     const { error } = await createClient().from("spots").insert({
       host_id: hostId,
@@ -38,8 +42,9 @@ export function SpotForm({ hostId }: { hostId: string }) {
     });
     setLoading(false);
     if (error) return setError(error.message);
-    e.currentTarget?.reset();
+    form.reset();
     setCoords(null);
+    setPublished(String(f.get("title")));
     router.refresh();
   }
 
@@ -60,6 +65,7 @@ export function SpotForm({ hostId }: { hostId: string }) {
         {coords ? `📍 ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : "📍 Utiliser ma position actuelle"}
       </button>
       {error && <p className="text-sm text-danger">{error}</p>}
+      {published && <p role="status" className="text-sm text-accent">✅ « {published} » est publié. Affichez son QR code ci-dessus pour l&apos;imprimer.</p>}
       <button className="btn-primary" disabled={loading}>{loading ? "Création…" : "Publier le spot"}</button>
     </form>
   );
