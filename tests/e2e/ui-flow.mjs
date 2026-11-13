@@ -219,7 +219,8 @@ try {
   };
   ok(!(await listed()), "Conducteur : le spot désactivé n'est plus sur la carte");
   await driver.goto(`${BASE_URL}/bookings`);
-  ok(await driver.locator("article", { hasText: TITLE }).first().isVisible(), "Conducteur : l'historique garde le nom du spot désactivé", "si échec : migration 20261113000000_spots_visible_to_past_drivers.sql non appliquée ?");
+  const keptName = await driver.locator("article", { hasText: TITLE }).first().isVisible();
+  ok(keptName, "Conducteur : l'historique garde le nom du spot désactivé", keptName ? "" : "migration 20261113000000_spots_visible_to_past_drivers.sql non appliquée ?");
   await hostCard.getByRole("button", { name: /Réactiver le spot/ }).click();
   await hostCard.getByText("Actif", { exact: true }).waitFor({ timeout: 10000 }).catch(() => {});
   ok(await hostCard.getByText("Actif", { exact: true }).isVisible(), "Hôte : spot réactivé, sans confirmation");
