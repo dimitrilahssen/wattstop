@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSyncExternalStore } from "react";
+import { liveStore } from "@/lib/live-store";
 
 type Tab = { href: string; label: string; icon: string; match: string[] };
 
@@ -20,6 +22,7 @@ function isActive(pathname: string, prefixes: string[]) {
 
 export function BottomNav() {
   const pathname = usePathname() ?? "/";
+  const { unseen } = useSyncExternalStore(liveStore.subscribe, liveStore.getSnapshot, liveStore.getServerSnapshot);
   return (
     <nav
       aria-label="Navigation principale"
@@ -40,6 +43,15 @@ export function BottomNav() {
               }
             >
               {t.icon} {t.label}
+              {t.href === "/bookings" && unseen > 0 && (
+                <span
+                  aria-label={`${unseen} nouveauté${unseen > 1 ? "s" : ""}`}
+                  data-testid="bookings-badge"
+                  className="ml-1 inline-grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 align-top text-[10px] font-bold leading-none text-white"
+                >
+                  {unseen > 9 ? "9+" : unseen}
+                </span>
+              )}
             </Link>
           );
         })}

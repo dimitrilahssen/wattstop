@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Booking } from "@/types/db";
+import { markSelfAction } from "@/lib/live-store";
 
 export function BookingActions({ booking, asHost }: { booking: Booking; asHost: boolean }) {
   const router = useRouter();
@@ -12,6 +13,9 @@ export function BookingActions({ booking, asHost }: { booking: Booking; asHost: 
   async function call(fn: "respond_booking" | "cancel_booking", args: Record<string, unknown>) {
     setBusy(true);
     setError(null);
+    // Pas de notification temps réel pour sa propre action
+    const target = fn === "cancel_booking" ? "cancelled" : args.p_accept ? "confirmed" : "rejected";
+    markSelfAction(booking.id, target);
     const { error } = await createClient().rpc(fn, args);
     setBusy(false);
     if (error) setError(error.message);

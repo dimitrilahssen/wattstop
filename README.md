@@ -28,6 +28,7 @@ Dans Supabase > Auth > URL Configuration, ajouter `http://localhost:3000/auth/ca
 | Accepter / refuser | `/bookings` | RPC `respond_booking` / `cancel_booking` |
 | Imprimer le QR | `/host` | RPC `get_spot_qr_key` / `regenerate_spot_qr_key`, rendu avec `qrcode.react` |
 | Scan sur place | `/s/[qrKey]` | RPC `resolve_qr` → `check_in` → `check_out` |
+| Notifications en direct | toutes les pages | Supabase Realtime sur `bookings` (RLS appliquée) : notification en haut d'écran, pastille sur l'onglet Résas, mise à jour de Réservations et Mes spots sans recharger (`src/components/live-bookings.tsx`) |
 
 ## Carte
 Les tuiles viennent d'[OpenFreeMap](https://openfreemap.org) (style `dark`), service gratuit et sans clé API. Pour en changer, définissez `NEXT_PUBLIC_MAP_STYLE_URL` (MapTiler, Stadia, style auto-hébergé…).
@@ -69,5 +70,5 @@ Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles
 - Expiration automatique des réservations `pending` ou `confirmed` passées (pg_cron)
-- Notifications push (Web Push) déclenchées par Realtime sur `bookings`
+- Notifications push (Web Push) pour prévenir aussi quand l'app est fermée (le temps réel ne marche qu'app ouverte)
 - Photo du compteur du véhicule au check-out, en cas de litige

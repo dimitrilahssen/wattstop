@@ -46,6 +46,19 @@ async function wire(ctx, errors) {
       await route.fulfill({ status: res.status, headers: out, body: Buffer.from(await res.arrayBuffer()) });
     });
   }
+  // Idem pour le WebSocket Realtime (notifications en direct) : relayé par Node derrière un proxy
+  if (process.env.HTTPS_PROXY) {
+    await ctx.routeWebSocket(/\/realtime\/v1\//, (ws) => {
+      const up = new WebSocket(ws.url());
+      up.binaryType = "arraybuffer";
+      const queue = [];
+      up.addEventListener("open", () => queue.splice(0).forEach((m) => up.send(m)));
+      up.addEventListener("message", (e) => ws.send(typeof e.data === "string" ? e.data : Buffer.from(e.data)));
+      up.addEventListener("close", () => ws.close());
+      ws.onMessage((m) => (up.readyState === WebSocket.OPEN ? up.send(m) : queue.push(m)));
+      ws.onClose(() => up.close());
+    });
+  }
   // Fond de carte uni : le test ne dépend pas d'un service de tuiles externe.
   await ctx.route("**/tiles.openfreemap.org/**", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#e8ecef" } }] }) })
@@ -124,7 +137,15 @@ try {
   await driver.getByLabel("Fin").fill(local(new Date(Date.now() + 62 * 60000)));
   await driver.getByPlaceholder(/Message/).fill("Bonjour, j'arrive dans 5 min !");
   await shot(driver, "conducteur-reservation");
+  // L'hôte reste sur « Mes spots » : la demande doit lui arriver en direct, sans recharger
+  await host.goto(`${BASE_URL}/host`);
+  await host.waitForTimeout(3000); // le temps que l'abonnement Realtime soit actif
   await driver.getByRole("button", { name: /Demander la réservation/ }).click();
+  const liveToast = (p, text) => p.getByTestId("live-toast").filter({ hasText: text });
+  await liveToast(host, "Nouvelle demande").waitFor({ timeout: 15000 }).catch(() => {});
+  ok(await liveToast(host, "Nouvelle demande").isVisible(), "Temps réel : l'hôte est notifié de la demande sans recharger");
+  ok((await host.getByTestId("bookings-badge").textContent().catch(() => "")) === "1", "Temps réel : pastille « 1 » sur l'onglet Résas de l'hôte");
+  await shot(host, "hote-notification");
   // Premier affichage d'une page en mode dev : Next la compile, ce qui peut prendre plusieurs secondes
   await driver.waitForURL(/\/bookings/, { timeout: 60000 }).catch(() => {});
   const myBk = driver.locator("article", { hasText: TITLE });
@@ -133,10 +154,12 @@ try {
   await shot(driver, "conducteur-resas-attente");
 
   // 4. Hôte : voit la demande et accepte
-  await host.goto(`${BASE_URL}/bookings`);
+  await host.getByRole("link", { name: /Résas/ }).click();
+  await host.waitForURL(/\/bookings/, { timeout: 60000 });
   const req = host.locator("article", { hasText: TITLE });
   await req.waitFor({ timeout: 10000 }).catch(() => {});
   ok(await req.isVisible(), "Hôte : voit la demande");
+  ok(!(await host.getByTestId("bookings-badge").isVisible()), "Temps réel : la pastille disparaît en ouvrant Réservations");
   ok(await req.getByText("j'arrive dans 5 min").isVisible().catch(() => false), "Hôte : voit le message du conducteur");
   ok(await req.getByText(`Conducteur : ${USERS.driver.name}`).isVisible().catch(() => false), "Hôte : voit le nom du conducteur");
   const shown = await req.locator("p", { hasText: "→" }).first().textContent();
@@ -146,6 +169,13 @@ try {
   await req.getByRole("button", { name: "Accepter" }).click();
   await req.filter({ hasText: "Confirmée" }).waitFor({ timeout: 10000 }).catch(() => {});
   ok(await req.filter({ hasText: "Confirmée" }).isVisible(), "Hôte : réservation confirmée");
+  ok(!(await liveToast(host, "acceptée").isVisible()), "Temps réel : pas de notification pour sa propre action");
+  // Le conducteur, resté sur Réservations, voit l'acceptation arriver
+  await liveToast(driver, "Réservation acceptée").waitFor({ timeout: 15000 }).catch(() => {});
+  ok(await liveToast(driver, "Réservation acceptée").isVisible(), "Temps réel : le conducteur est notifié de l'acceptation");
+  await myBk.filter({ hasText: "Confirmée" }).waitFor({ timeout: 10000 }).catch(() => {});
+  ok(await myBk.filter({ hasText: "Confirmée" }).isVisible(), "Temps réel : le statut passe à « Confirmée » sans recharger");
+  await shot(driver, "conducteur-notification");
 
   // 5. Conducteur : scanne (code de secours saisi dans /scan) et démarre
   await driver.goto(`${BASE_URL}/scan`);
@@ -160,8 +190,10 @@ try {
   await kwhInput.waitFor({ timeout: 10000 }).catch(() => {});
   ok(await kwhInput.isVisible(), "Conducteur : recharge démarrée");
   await shot(driver, "conducteur-en-charge");
-  await host.reload();
-  ok(await host.locator("article", { hasText: TITLE }).filter({ hasText: "En charge" }).isVisible(), "Hôte : voit « En charge »");
+  await liveToast(host, "Recharge démarrée").waitFor({ timeout: 15000 }).catch(() => {});
+  ok(await liveToast(host, "Recharge démarrée").isVisible(), "Temps réel : l'hôte est notifié du démarrage");
+  await host.locator("article", { hasText: TITLE }).filter({ hasText: "En charge" }).waitFor({ timeout: 10000 }).catch(() => {});
+  ok(await host.locator("article", { hasText: TITLE }).filter({ hasText: "En charge" }).isVisible(), "Hôte : voit « En charge » sans recharger");
 
   // 6. Tentative de triche, puis fin de recharge
   await kwhInput.fill("40");
@@ -180,8 +212,10 @@ try {
   await driver.waitForURL(/\/bookings/);
   ok(await driver.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).isVisible(), "Conducteur : historique « Terminée »");
   await shot(driver, "conducteur-historique");
-  await host.reload();
-  ok(await host.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).isVisible(), "Hôte : voit la recharge terminée");
+  await liveToast(host, "Recharge terminée").waitFor({ timeout: 15000 }).catch(() => {});
+  ok(await liveToast(host, "Recharge terminée").filter({ hasText: "0,03 €" }).isVisible(), "Temps réel : l'hôte est notifié de la fin, avec le montant");
+  await host.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).waitFor({ timeout: 10000 }).catch(() => {});
+  ok(await host.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).isVisible(), "Hôte : voit la recharge terminée sans recharger");
   await shot(host, "hote-historique");
 
   // 7. L'hôte vérifie son propre QR
