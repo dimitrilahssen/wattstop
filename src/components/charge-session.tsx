@@ -33,11 +33,11 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
   return (
     <section className="grid gap-4">
       <div className="card">
-        <p className="text-xs uppercase tracking-wide text-brand-400">Spot scanné</p>
+        <p className="text-xs uppercase tracking-wide text-accent">Spot scanné</p>
         <h1 className="text-xl font-bold">{spot.title}</h1>
-        <p className="text-sm text-white/60">{spot.address}</p>
+        <p className="text-sm text-muted">{spot.address}</p>
         <p className="mt-2 text-sm">{CONNECTOR_LABELS[spot.connector_type]} · {spot.power_kw} kW · {eur(spot.price_per_kwh)}/kWh</p>
-        {spot.access_instructions && <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm">🔑 {spot.access_instructions}</p>}
+        {spot.access_instructions && <p className="mt-3 rounded-lg bg-soft p-3 text-sm">🔑 {spot.access_instructions}</p>}
       </div>
 
       {is_host && <p className="card text-sm">Vous êtes l&apos;hôte de ce spot. Ce QR fonctionne ✅</p>}
@@ -46,7 +46,7 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
         <div className="card text-center">
           <p className="text-4xl">✅</p>
           <p className="mt-2 text-lg font-semibold">Recharge terminée</p>
-          <p className="text-white/70">{result.energy_kwh} kWh · <strong>{eur(result.total_price ?? 0)}</strong></p>
+          <p className="text-muted">{result.energy_kwh} kWh · <strong>{eur(result.total_price ?? 0)}</strong></p>
           <Link href="/bookings" className="btn-ghost mt-4 w-full">Voir mes réservations</Link>
         </div>
       ) : !booking ? (
@@ -58,12 +58,12 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
         )
       ) : booking.status === "confirmed" ? (
         <div className="card grid gap-3">
-          <p className="text-sm text-white/70">Créneau : {dateTime(booking.start_at)} → {dateTime(booking.end_at)}</p>
+          <p className="text-sm text-muted">Créneau : {dateTime(booking.start_at)} → {dateTime(booking.end_at)}</p>
           <button className="btn-primary" disabled={busy} onClick={checkIn}>⚡ Démarrer la recharge</button>
         </div>
       ) : (
         <form onSubmit={checkOut} className="card grid gap-3">
-          <p className="text-sm text-white/70">En charge depuis {booking.checked_in_at && dateTime(booking.checked_in_at)}</p>
+          <p className="text-sm text-muted">En charge depuis {booking.checked_in_at && dateTime(booking.checked_in_at)}</p>
           <label className="grid gap-1 text-sm">Énergie rechargée (kWh, lue sur le tableau de bord du véhicule)
             <input className="input" type="number" step="0.01" min="0" required value={kwh} onChange={(e) => setKwh(e.target.value)} />
           </label>
@@ -71,7 +71,7 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
           <button className="btn-primary" disabled={busy}>🏁 Terminer la recharge</button>
         </form>
       )}
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </section>
   );
 }

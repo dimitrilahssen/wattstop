@@ -45,7 +45,7 @@ export function BookingForm({ spotId, driverId }: { spotId: string; driverId: st
         <input className="input" type="datetime-local" required value={end} onChange={(e) => setEnd(e.target.value)} />
       </label>
       <textarea className="input" maxLength={500} placeholder="Message pour l'hôte (optionnel)" value={note} onChange={(e) => setNote(e.target.value)} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <button className="btn-primary" disabled={loading}>{loading ? "Envoi…" : "Demander la réservation"}</button>
     </form>
   );

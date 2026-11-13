@@ -108,13 +108,13 @@ export function QrScanner({ onDecode }: Props) {
   }, []);
 
   return (
-    <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-black">
+    <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-line bg-black">
       <video ref={videoRef} className="h-full w-full object-cover" playsInline muted aria-label="Aperçu de la caméra" />
       {status === "scanning" ? (
         // Viseur
         <div aria-hidden className="pointer-events-none absolute inset-[18%] rounded-2xl border-4 border-brand-500/90 shadow-[0_0_0_9999px_rgba(11,18,32,.55)]" />
       ) : (
-        <p role="status" className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/80">
+        <p role="status" className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/90">
           {MESSAGES[status]}
         </p>
       )}

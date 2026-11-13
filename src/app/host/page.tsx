@@ -25,8 +25,8 @@ export default async function HostPage() {
       {spots.map((s) => (
         <article key={s.id} className="card grid gap-3">
           <div>
-            <p className="font-semibold">{s.title} {!s.is_active && <span className="text-xs text-white/50">(inactif)</span>}</p>
-            <p className="text-sm text-white/60">
+            <p className="font-semibold">{s.title} {!s.is_active && <span className="text-xs text-subtle">(inactif)</span>}</p>
+            <p className="text-sm text-muted">
               {CONNECTOR_LABELS[s.connector_type]} · {s.power_kw} kW · {eur(s.price_per_kwh)}/kWh
             </p>
           </div>

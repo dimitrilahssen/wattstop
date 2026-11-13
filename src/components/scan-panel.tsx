@@ -46,14 +46,14 @@ export function ScanPanel() {
           <div>
             <p className="text-5xl">✅</p>
             <p className="mt-2 font-semibold">Code reconnu</p>
-            <p className="text-sm text-white/60">Ouverture du spot…</p>
+            <p className="text-sm text-muted">Ouverture du spot…</p>
           </div>
         </div>
       ) : (
         <QrScanner onDecode={onDecode} />
       )}
 
-      {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
       <form onSubmit={onSubmit} className="card grid gap-3">
         <label htmlFor="manual-code" className="text-sm font-medium">QR illisible ? Saisissez le code</label>

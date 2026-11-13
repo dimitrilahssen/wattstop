@@ -32,7 +32,7 @@ export default async function BookingsPage() {
   return (
     <section className="grid gap-4">
       <h1 className="text-2xl font-bold">Réservations</h1>
-      {bookings.length === 0 && <p className="text-white/60">Aucune réservation pour l&apos;instant.</p>}
+      {bookings.length === 0 && <p className="text-muted">Aucune réservation pour l&apos;instant.</p>}
       {bookings.map((b) => {
         const asHost = b.host_id === user?.id;
         return (
@@ -40,11 +40,11 @@ export default async function BookingsPage() {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="font-semibold">{b.spot?.title}</p>
-                <p className="text-xs text-white/50">{asHost ? "Vous êtes l'hôte" : "Vous êtes le conducteur"}</p>
+                <p className="text-xs text-subtle">{asHost ? "Vous êtes l'hôte" : "Vous êtes le conducteur"}</p>
               </div>
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{STATUS_LABEL[b.status]}</span>
+              <span className="rounded-full bg-soft px-2 py-0.5 text-xs">{STATUS_LABEL[b.status]}</span>
             </div>
-            <p className="text-sm text-white/70">{dateTime(b.start_at)} → {dateTime(b.end_at)}</p>
+            <p className="text-sm text-muted">{dateTime(b.start_at)} → {dateTime(b.end_at)}</p>
             {b.status === "completed" && b.total_price != null && (
               <p className="text-sm">{b.energy_kwh} kWh · <strong>{eur(b.total_price)}</strong></p>
             )}

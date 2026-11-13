@@ -135,7 +135,7 @@ export default function SpotsMap({ center, spots, onSearchArea }: Props) {
   }
 
   return (
-    <div className="relative h-[62dvh] overflow-hidden rounded-2xl border border-white/10">
+    <div className="relative h-[62dvh] overflow-hidden rounded-2xl border border-line">
       {/* h-full/w-full et non absolute : MapLibre force position:relative sur son conteneur */}
       <div ref={containerRef} className="h-full w-full" data-testid="map" />
       {moved && (

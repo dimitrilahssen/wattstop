@@ -27,14 +27,14 @@ export function SpotQr({ spotId, title }: { spotId: string; title: string }) {
       <p className="text-center font-mono text-sm tracking-wider" aria-label="Code de secours">
         {key.match(/.{1,4}/g)?.join(" ")}
       </p>
-      <p className="text-center text-xs text-white/50">
+      <p className="text-center text-xs text-subtle">
         Scannez avec l&apos;appareil photo ou l&apos;onglet Scanner de WattStop pour démarrer/terminer la recharge.
       </p>
       <div className="flex w-full gap-2">
         <button className="btn-ghost flex-1 py-2" onClick={() => window.print()}>Imprimer</button>
         <button className="btn-ghost flex-1 py-2" onClick={() => load(true)}>Régénérer</button>
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
 }

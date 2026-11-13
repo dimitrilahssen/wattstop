@@ -23,7 +23,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Navigation principale"
-      className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-ink-900/90 backdrop-blur pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-x-0 bottom-0 border-t border-line bg-surface/90 backdrop-blur pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto grid max-w-lg grid-cols-4 text-center text-xs sm:text-sm">
         {TABS.map((t) => {
@@ -35,8 +35,8 @@ export function BottomNav() {
               aria-current={active ? "page" : undefined}
               className={
                 active
-                  ? "border-t-2 border-brand-400 py-3 font-semibold text-brand-400"
-                  : "border-t-2 border-transparent py-3 text-white/70 hover:text-brand-400"
+                  ? "border-t-2 border-accent py-3 font-semibold text-accent"
+                  : "border-t-2 border-transparent py-3 text-muted hover:text-accent"
               }
             >
               {t.icon} {t.label}

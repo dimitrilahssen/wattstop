@@ -15,4 +15,4 @@ export function haversine(a: LatLng, b: LatLng) {
 
 /** Style de carte MapLibre. Par défaut : OpenFreeMap (gratuit, sans clé API). */
 export const MAP_STYLE_URL =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/dark";
+  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/positron";

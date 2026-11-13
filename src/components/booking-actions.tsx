@@ -34,7 +34,7 @@ export function BookingActions({ booking, asHost }: { booking: Booking; asHost: 
           <button disabled={busy} className="btn-ghost flex-1 py-2" onClick={() => call("cancel_booking", { p_booking_id: booking.id })}>Annuler</button>
         )}
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
 }

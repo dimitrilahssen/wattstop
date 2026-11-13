@@ -4,11 +4,11 @@ export default function Home() {
   return (
     <section className="flex flex-col gap-8 pt-10">
       <div>
-        <p className="text-brand-400 font-semibold">⚡ WattStop</p>
+        <p className="text-accent font-semibold">⚡ WattStop</p>
         <h1 className="mt-2 text-4xl font-bold leading-tight">
-          La recharge VE chez l&apos;habitant. <span className="text-brand-400">Zéro matériel.</span>
+          La recharge VE chez l&apos;habitant. <span className="text-accent">Zéro matériel.</span>
         </h1>
-        <p className="mt-4 text-white/70">
+        <p className="mt-4 text-muted">
           Les hôtes collent un QR code sur leur prise. Les conducteurs réservent, scannent pour démarrer,
           scannent pour terminer. C&apos;est tout.
         </p>
@@ -20,10 +20,10 @@ export default function Home() {
           ["3", "Scannez le QR sur place", "Check-in, recharge, check-out : paiement au kWh."],
         ].map(([n, t, d]) => (
           <li key={n} className="card flex gap-4">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500 font-bold text-ink-900">{n}</span>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent font-bold text-white">{n}</span>
             <div>
               <p className="font-semibold">{t}</p>
-              <p className="text-sm text-white/60">{d}</p>
+              <p className="text-sm text-muted">{d}</p>
             </div>
           </li>
         ))}

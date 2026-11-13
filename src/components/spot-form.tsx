@@ -59,7 +59,7 @@ export function SpotForm({ hostId }: { hostId: string }) {
       <button type="button" className="btn-ghost" onClick={locate}>
         {coords ? `📍 ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : "📍 Utiliser ma position actuelle"}
       </button>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <button className="btn-primary" disabled={loading}>{loading ? "Création…" : "Publier le spot"}</button>
     </form>
   );

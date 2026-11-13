@@ -10,7 +10,7 @@ import { FALLBACK_CENTER, type LatLng } from "@/lib/geo";
 // MapLibre manipule window/WebGL : chargé uniquement côté client, et seulement en vue carte.
 const SpotsMap = dynamic(() => import("./spots-map"), {
   ssr: false,
-  loading: () => <div className="h-[62dvh] animate-pulse rounded-2xl bg-white/5" />,
+  loading: () => <div className="h-[62dvh] animate-pulse rounded-2xl bg-soft" />,
 });
 
 const DEFAULT_RADIUS_M = 15_000;
@@ -54,28 +54,28 @@ export function SpotsExplorer() {
   return (
     <div className="mt-4 grid gap-3">
       <div className="flex items-center justify-between gap-3">
-        <div role="tablist" aria-label="Affichage" className="inline-flex rounded-xl border border-white/10 p-1 text-sm">
+        <div role="tablist" aria-label="Affichage" className="inline-flex rounded-xl border border-line p-1 text-sm">
           {(["map", "list"] as const).map((v) => (
             <button
               key={v}
               role="tab"
               aria-selected={view === v}
               onClick={() => setView(v)}
-              className={`rounded-lg px-3 py-1.5 font-medium ${view === v ? "bg-brand-500 text-ink-900" : "text-white/70"}`}
+              className={`rounded-lg px-3 py-1.5 font-medium ${view === v ? "bg-accent text-white" : "text-muted"}`}
             >
               {v === "map" ? "Carte" : "Liste"}
             </button>
           ))}
         </div>
-        <p className="text-sm text-white/60" aria-live="polite">
+        <p className="text-sm text-muted" aria-live="polite">
           {loading ? "Recherche…" : `${spots.length} spot${spots.length > 1 ? "s" : ""}`}
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {!center ? (
-        <div className="h-[62dvh] animate-pulse rounded-2xl bg-white/5" aria-label="Localisation…" />
+        <div className="h-[62dvh] animate-pulse rounded-2xl bg-soft" aria-label="Localisation…" />
       ) : view === "map" ? (
         <SpotsMap center={center} spots={spots} onSearchArea={search} />
       ) : (
@@ -86,19 +86,19 @@ export function SpotsExplorer() {
 }
 
 function SpotList({ spots, loading }: { spots: NearbySpot[]; loading: boolean }) {
-  if (!loading && spots.length === 0) return <p className="text-white/60">Aucun spot dans cette zone.</p>;
+  if (!loading && spots.length === 0) return <p className="text-muted">Aucun spot dans cette zone.</p>;
   return (
     <ul className="grid gap-3">
       {spots.map((s) => (
         <li key={s.id}>
-          <Link href={`/spots/${s.id}`} className="card flex items-center justify-between gap-3 hover:border-brand-500/50">
+          <Link href={`/spots/${s.id}`} className="card flex items-center justify-between gap-3 hover:border-accent/50">
             <div>
               <p className="font-semibold">{s.title}</p>
-              <p className="text-sm text-white/60">{CONNECTOR_LABELS[s.connector_type]} · {s.power_kw} kW</p>
+              <p className="text-sm text-muted">{CONNECTOR_LABELS[s.connector_type]} · {s.power_kw} kW</p>
             </div>
             <div className="text-right">
-              <p className="font-semibold text-brand-400">{eur(s.price_per_kwh)}<span className="text-xs text-white/50">/kWh</span></p>
-              <p className="text-xs text-white/50">{distance(s.distance_m)}</p>
+              <p className="font-semibold text-accent">{eur(s.price_per_kwh)}<span className="text-xs text-subtle">/kWh</span></p>
+              <p className="text-xs text-subtle">{distance(s.distance_m)}</p>
             </div>
           </Link>
         </li>

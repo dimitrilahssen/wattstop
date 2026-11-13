@@ -1,11 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-50: #f0fdf4;
-  --color-brand-400: #4ade80;
-  --color-brand-500: #22c55e;
-  --color-brand-600: #16a34a;
-  --color-ink-900: #0b1220;
+  /* Palette claire : tout le thème se règle ici */
+  --color-page: #f6f7f9;       /* fond de l'app */
+  --color-surface: #ffffff;    /* cartes, barre du bas, popups */
+  --color-soft: #eef1f4;       /* zones secondaires, squelettes */
+  --color-line: #e1e5ea;       /* bordures */
+  --color-fg: #0f172a;         /* texte principal */
+  --color-muted: #475569;      /* texte secondaire */
+  --color-subtle: #64748b;     /* légendes */
+  --color-accent: #15803d;     /* vert WattStop (contraste AA sur blanc) */
+  --color-accent-hover: #166534;
+  --color-danger: #b91c1c;
+  --color-brand-500: #22c55e;  /* cadre du viseur caméra */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -13,27 +20,27 @@
 @utility btn {
   @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold transition active:scale-[.98] disabled:opacity-50;
 }
-@utility btn-primary { @apply btn bg-brand-500 text-ink-900 hover:bg-brand-400; }
-@utility btn-ghost { @apply btn border border-white/15 text-white hover:bg-white/5; }
-@utility card { @apply rounded-2xl border border-white/10 bg-white/5 p-4; }
-@utility input { @apply w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-white placeholder:text-white/40 focus:border-brand-500 focus:outline-none; }
+@utility btn-primary { @apply btn bg-accent text-white hover:bg-accent-hover; }
+@utility btn-ghost { @apply btn border border-line bg-surface text-fg hover:bg-soft; }
+@utility card { @apply rounded-2xl border border-line bg-surface p-4 shadow-sm; }
+@utility input { @apply w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-fg placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20; }
 
-html, body { @apply bg-ink-900 text-white antialiased; }
+html, body { @apply bg-page text-fg antialiased; }
 /* Safe areas iOS en mode standalone */
 body { padding-bottom: env(safe-area-inset-bottom); }
 
 /* ---------- MapLibre : marqueurs et popups WattStop ---------- */
 .ws-marker {
-  @apply cursor-pointer rounded-full border-2 border-ink-900 bg-brand-500 px-2.5 py-1 text-xs font-bold whitespace-nowrap text-ink-900 shadow-lg hover:bg-brand-400 focus-visible:outline-2 focus-visible:outline-white;
+  @apply cursor-pointer rounded-full border-2 border-white bg-accent px-2.5 py-1 text-xs font-bold whitespace-nowrap text-white shadow-md hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent;
 }
 /* Sélecteurs doublés pour passer devant le CSS de MapLibre (chargé après) */
 .maplibregl-popup .maplibregl-popup-content {
-  @apply rounded-xl bg-ink-900 p-3 text-white shadow-xl ring-1 ring-white/15;
+  @apply rounded-xl bg-surface p-3 text-fg shadow-xl ring-1 ring-line;
 }
-.maplibregl-popup[class*="anchor-bottom"] .maplibregl-popup-tip { border-top-color: var(--color-ink-900); }
-.maplibregl-popup[class*="anchor-top"] .maplibregl-popup-tip { border-bottom-color: var(--color-ink-900); }
-.maplibregl-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--color-ink-900); }
-.maplibregl-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--color-ink-900); }
+.maplibregl-popup[class*="anchor-bottom"] .maplibregl-popup-tip { border-top-color: var(--color-surface); }
+.maplibregl-popup[class*="anchor-top"] .maplibregl-popup-tip { border-bottom-color: var(--color-surface); }
+.maplibregl-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--color-surface); }
+.maplibregl-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--color-surface); }
 .ws-popup-title { @apply font-semibold; }
-.ws-popup-meta { @apply mt-0.5 text-xs text-white/60; }
-.ws-popup-link { @apply mt-2 inline-block rounded text-sm font-semibold text-brand-400 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-400; }
+.ws-popup-meta { @apply mt-0.5 text-xs text-muted; }
+.ws-popup-link { @apply mt-2 inline-block rounded text-sm font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent; }

@@ -29,7 +29,7 @@ export function LoginForm() {
       <button className="btn-primary" disabled={state === "sending"}>
         {state === "sending" ? "Envoi…" : "Recevoir le lien"}
       </button>
-      {state === "error" && <p className="text-sm text-red-400">Erreur d&apos;envoi, réessayez.</p>}
+      {state === "error" && <p className="text-sm text-danger">Erreur d&apos;envoi, réessayez.</p>}
     </form>
   );
 }
