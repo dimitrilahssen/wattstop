@@ -53,7 +53,7 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 | Commande | Ce qui est testé | Durée |
 |---|---|---|
 | `npm run test:e2e:api` | Le parcours hôte → conducteur via l'API, plus ~15 tentatives de triche qui doivent échouer (lire la clé QR d'un autre, forcer un prix, s'auto-confirmer, déclarer trop de kWh…) | ~1 min 30 |
-| `npm run test:e2e:ui` | Le même parcours dans un vrai navigateur, écran par écran, avec deux sessions (hôte et conducteur). Captures dans `tests/e2e/screenshots/` | ~2 min 30 |
+| `npm run test:e2e:ui` | Le même parcours dans un vrai navigateur, écran par écran, avec deux sessions (hôte et conducteur), y compris la désactivation puis la réactivation d'un spot. Captures dans `tests/e2e/screenshots/` | ~2 min 30 |
 | `npm run test:e2e` | Les deux à la suite | ~4 min |
 
 **Mise en place (une seule fois)**
@@ -65,7 +65,6 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de test sont désactivés : ils disparaissent de la carte publique mais l'historique reste. Les recharges attendent 70 s avant le check-out, car le plafond anti-fraude dépend du temps écoulé (réglable avec `E2E_CHARGE_SECONDS`).
 
 ## Pistes suivantes
-- Bouton « Désactiver / réactiver » un spot dans Mes spots (la base le permet déjà)
 - Paiement : Stripe Connect (pré-autorisation au check-in, capture au check-out)
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles

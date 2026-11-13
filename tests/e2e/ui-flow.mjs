@@ -188,6 +188,43 @@ try {
   await host.goto(`${BASE_URL}/s/${key}`);
   ok(await host.getByText("Ce QR fonctionne").isVisible(), "Hôte : scanner son propre QR confirme qu'il fonctionne");
 
+  // 8. Désactiver / réactiver le spot
+  const tomorrow = Date.now() + 86400_000;
+  const { data: spotRow } = await H.c.from("spots").select("id").eq("title", TITLE).single();
+  const { data: future } = await D.c.from("bookings")
+    .insert({ spot_id: spotRow.id, driver_id: D.id, start_at: new Date(tomorrow).toISOString(), end_at: new Date(tomorrow + 3600_000).toISOString() })
+    .select("id").single();
+  await host.goto(`${BASE_URL}/host`);
+  const hostCard = host.locator("article", { hasText: TITLE });
+  let dialogText = "";
+  host.once("dialog", (d) => { dialogText = d.message(); d.dismiss(); });
+  await hostCard.getByRole("button", { name: /Désactiver le spot/ }).click();
+  await host.waitForTimeout(800);
+  ok(/1 réservation à venir/.test(dialogText), "Hôte : avertissement des réservations à venir avant désactivation", dialogText.split("\n")[0]);
+  ok(await hostCard.getByText("Actif", { exact: true }).isVisible(), "Hôte : annuler l'avertissement laisse le spot actif");
+  await D.c.rpc("cancel_booking", { p_booking_id: future.id });
+  host.once("dialog", (d) => d.accept());
+  await hostCard.getByRole("button", { name: /Désactiver le spot/ }).click();
+  await hostCard.getByText("Désactivé", { exact: true }).waitFor({ timeout: 10000 }).catch(() => {});
+  ok(await hostCard.getByText("Désactivé", { exact: true }).isVisible(), "Hôte : spot désactivé");
+  await shot(host, "hote-spot-desactive");
+  const listed = async () => {
+    // On attend la vraie réponse de la recherche, sinon « absent de la liste » serait vrai trop tôt
+    const searched = driver.waitForResponse((r) => r.url().includes("/rpc/nearby_spots"), { timeout: 30000 });
+    await driver.goto(`${BASE_URL}/map`);
+    await searched;
+    await driver.getByRole("tab", { name: "Liste" }).click();
+    await driver.waitForTimeout(500);
+    return driver.getByRole("link", { name: new RegExp(TITLE.replace(/[[\]]/g, "\\$&")) }).isVisible();
+  };
+  ok(!(await listed()), "Conducteur : le spot désactivé n'est plus sur la carte");
+  await driver.goto(`${BASE_URL}/bookings`);
+  ok(await driver.locator("article", { hasText: TITLE }).first().isVisible(), "Conducteur : l'historique garde le nom du spot désactivé", "si échec : migration 20261113000000_spots_visible_to_past_drivers.sql non appliquée ?");
+  await hostCard.getByRole("button", { name: /Réactiver le spot/ }).click();
+  await hostCard.getByText("Actif", { exact: true }).waitFor({ timeout: 10000 }).catch(() => {});
+  ok(await hostCard.getByText("Actif", { exact: true }).isVisible(), "Hôte : spot réactivé, sans confirmation");
+  ok(await listed(), "Conducteur : le spot réactivé réapparaît sur la carte");
+
   // Seule erreur attendue : le refus HTTP 400 de la tentative de triche
   const unexpected = [...new Set(errors)].filter((e) => !/status of 400/.test(e));
   ok(unexpected.length === 0, "Aucune erreur inattendue dans la console", unexpected.join(" | "));
