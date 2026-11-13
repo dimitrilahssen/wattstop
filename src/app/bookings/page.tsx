@@ -39,13 +39,14 @@ export default async function BookingsPage() {
   await supabase.rpc("expire_bookings");
 
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
-  const { data } = await supabase
-    .from("bookings")
-    .select("*, spot:spots(title, address), driver:profiles!bookings_driver_id_fkey(full_name), payment:payments(status, amount_authorized_cents, amount_captured_cents)")
-    .order("start_at", { ascending: false })
-    .limit(50);
+  const BASE = "*, spot:spots(title, address), driver:profiles!bookings_driver_id_fkey(full_name)";
+  const list = (columns: string) => supabase.from("bookings").select(columns).order("start_at", { ascending: false }).limit(50);
+  let { data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents)`);
+  // Base sans la migration des paiements (table payments absente) : on liste quand même les réservations
+  if (error) ({ data, error } = await list(BASE));
+  if (error) console.error("Réservations :", error.message);
 
-  const bookings = (data ?? []) as (Booking & {
+  const bookings = (data ?? []) as unknown as (Booking & {
     spot: { title: string; address: string } | null;
     driver: { full_name: string | null } | null;
     payment: { status: PaymentStatus; amount_authorized_cents: number; amount_captured_cents: number | null } | null;
