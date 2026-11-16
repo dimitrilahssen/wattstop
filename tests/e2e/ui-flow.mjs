@@ -46,6 +46,23 @@ async function wire(ctx, errors) {
       await route.fulfill({ status: res.status, headers: out, body: Buffer.from(await res.arrayBuffer()) });
     });
   }
+  // Formulaire de carte Stripe : ses scripts et iframes sont relayés de la même façon.
+  // Les domaines de mesure d'audience Stripe non autorisés sont simplement coupés.
+  if (process.env.HTTPS_PROXY) {
+    await ctx.route(/^https:\/\/([a-z0-9-]+\.)*(stripe\.com|stripe\.network|stripecdn\.com)\//, async (route) => {
+      const r = route.request();
+      try {
+        const headers = { ...r.headers() };
+        delete headers.host; delete headers["content-length"];
+        const res = await fetch(r.url(), { method: r.method(), headers, body: ["GET", "HEAD"].includes(r.method()) ? undefined : r.postDataBuffer() });
+        const out = Object.fromEntries(res.headers);
+        delete out["content-encoding"]; delete out["content-length"];
+        await route.fulfill({ status: res.status, headers: out, body: Buffer.from(await res.arrayBuffer()) });
+      } catch {
+        await route.abort();
+      }
+    });
+  }
   // Idem pour le WebSocket Realtime (notifications en direct) : relayé par Node derrière un proxy
   if (process.env.HTTPS_PROXY) {
     await ctx.routeWebSocket(/\/realtime\/v1\//, (ws) => {
@@ -185,6 +202,26 @@ try {
   await driver.getByText("Spot scanné").waitFor();
   ok(await driver.getByText("Sonnez au 2e").isVisible(), "Conducteur : instructions d'accès visibles après scan");
   await shot(driver, "conducteur-scan");
+  // Paiement (si Stripe est configuré) : carte de test saisie dans le vrai formulaire Stripe
+  const paymentStep = driver.getByTestId("payment-step");
+  // L'écran vérifie d'abord l'état du paiement : on attend le formulaire ou le bouton actif
+  await driver.locator('[data-testid="payment-step"], button.btn-primary:not([disabled]):has-text("Démarrer la recharge")').first().waitFor({ timeout: 30000 });
+  if (await paymentStep.isVisible().catch(() => false)) {
+    await paymentStep.getByRole("button", { name: /Continuer vers le paiement/ }).click();
+    const stripeFrame = driver.frameLocator('iframe[title*="paiement"], iframe[title*="payment"], iframe[name^="__privateStripeFrame"]').first();
+    const number = stripeFrame.locator('input[name="number"]');
+    await number.waitFor({ timeout: 60000 });
+    ok(await paymentStep.getByText(/maximum seront bloqués/).isVisible(), "Paiement : montant maximal affiché avant la carte");
+    await number.fill("4242424242424242");
+    await stripeFrame.locator('input[name="expiry"]').fill("12 / 34");
+    await stripeFrame.locator('input[name="cvc"]').fill("123");
+    const postal = stripeFrame.locator('input[name="postalCode"]');
+    if (await postal.isVisible().catch(() => false)) await postal.fill("75011");
+    await shot(driver, "conducteur-carte");
+    await paymentStep.getByRole("button", { name: /Valider la carte/ }).click();
+    await driver.getByRole("button", { name: /Démarrer la recharge/ }).waitFor({ timeout: 60000 }).catch(() => {});
+    ok(await driver.getByRole("button", { name: /Démarrer la recharge/ }).isEnabled().catch(() => false), "Paiement : carte de test validée, démarrage possible");
+  }
   await driver.getByRole("button", { name: /Démarrer la recharge/ }).click();
   const kwhInput = driver.getByLabel(/Énergie rechargée/);
   await kwhInput.waitFor({ timeout: 10000 }).catch(() => {});
@@ -207,6 +244,12 @@ try {
   await driver.getByRole("button", { name: /Terminer/ }).click();
   await driver.getByText("Recharge terminée").waitFor({ timeout: 10000 }).catch(() => {});
   ok(await driver.getByText("Recharge terminée").isVisible(), "Conducteur : recharge terminée et prix affiché");
+  const chargeResult = driver.getByTestId("charge-result");
+  if (await chargeResult.isVisible().catch(() => false)) {
+    await chargeResult.filter({ hasText: /prélevé|Moins de 0,50/ }).waitFor({ timeout: 30000 }).catch(() => {});
+    // 0,1 kWh × 0,25 € = 0,03 € : sous le minimum Stripe, rien n'est prélevé et le blocage est libéré
+    ok(/Moins de 0,50/.test(await chargeResult.textContent()), "Paiement : moins de 0,50 €, rien n'est prélevé", await chargeResult.textContent());
+  }
   await shot(driver, "conducteur-termine");
   await driver.getByRole("link", { name: "Voir mes réservations" }).click();
   await driver.waitForURL(/\/bookings/, { timeout: 60000 });
@@ -261,7 +304,7 @@ try {
   ok(await listed(), "Conducteur : le spot réactivé réapparaît sur la carte");
 
   // Seule erreur attendue : le refus HTTP 400 de la tentative de triche
-  const unexpected = [...new Set(errors)].filter((e) => !/status of 400/.test(e));
+  const unexpected = [...new Set(errors)].filter((e) => !/status of 400/.test(e) && !/stripe|ERR_FAILED|net::/i.test(e));
   ok(unexpected.length === 0, "Aucune erreur inattendue dans la console", unexpected.join(" | "));
 
   await hideTestSpots(H.c, H.id);

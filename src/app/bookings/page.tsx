@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Booking } from "@/types/db";
 import { dateTime, eur, kwh } from "@/lib/format";
 import { BookingActions } from "@/components/booking-actions";
-import { paymentsEnabled, type PaymentStatus } from "@/lib/payments";
+import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
 
@@ -56,7 +56,7 @@ export default async function BookingsPage() {
   // (page fermée trop tôt…) est prélevée maintenant. Le montant vient de la base, pas du client.
   const toCapture = paymentsEnabled ? bookings.filter((b) => b.status === "completed" && b.payment?.status === "authorized") : [];
   if (toCapture.length) {
-    await Promise.all(toCapture.map((b) => supabase.functions.invoke("payments", { body: { action: "capture", booking_id: b.id } })));
+    await Promise.all(toCapture.map((b) => supabase.functions.invoke(PAYMENTS_FUNCTION, { body: { action: "capture", booking_id: b.id } })));
     const { data: fresh } = await supabase
       .from("payments")
       .select("booking_id, status, amount_authorized_cents, amount_captured_cents")

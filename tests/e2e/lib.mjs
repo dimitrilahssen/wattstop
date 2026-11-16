@@ -89,3 +89,46 @@ export function crash(e) {
   console.error("ERREUR", e);
   process.exit(2);
 }
+
+// ---------- Paiement Stripe (mode test) ----------
+export const STRIPE_PK = env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+export const PAYMENTS_FUNCTION = env.NEXT_PUBLIC_PAYMENTS_FUNCTION || "payments";
+
+/** Appelle l'Edge Function de paiement avec la session d'un client Supabase (ou sans session). */
+export async function callPayments(c, action, bookingId) {
+  const token = c ? (await c.auth.getSession()).data.session?.access_token : null;
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${PAYMENTS_FUNCTION}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action, booking_id: bookingId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { http: res.status, ...body };
+}
+
+/** Ce que fait Stripe.js dans le navigateur : confirmer avec la clé PUBLIQUE, le client_secret et la carte de test Visa. */
+export async function confirmWithTestCard(clientSecret) {
+  const piId = clientSecret.split("_secret_")[0];
+  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${piId}/confirm`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${STRIPE_PK}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_secret: clientSecret, payment_method: "pm_card_visa" }),
+  });
+  return res.json();
+}
+
+/** Le paiement est-il obligatoire avant le check-in (app_settings.payments_required) ? */
+export async function paymentsRequired(c) {
+  const { data, error } = await c.from("app_settings").select("payments_required").maybeSingle();
+  return !error && !!data?.payments_required;
+}
+
+/** Paie une réservation confirmée avec la carte de test (autorisation + validation + synchro). */
+export async function payWithTestCard(c, bookingId) {
+  const a = await callPayments(c, "authorize", bookingId);
+  if (a.http !== 200) throw new Error(`Autorisation refusée : ${a.error}`);
+  if (a.client_secret) await confirmWithTestCard(a.client_secret);
+  const s = await callPayments(c, "sync", bookingId);
+  if (s.status !== "authorized") throw new Error(`Paiement non autorisé : ${JSON.stringify(s)}`);
+  return a;
+}

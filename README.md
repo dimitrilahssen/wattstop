@@ -59,7 +59,7 @@ Pré-autorisation au démarrage, prélèvement du montant réel à la fin. Les p
 
 Sécurité : la clé secrète Stripe n'existe que dans les secrets de l'Edge Function `supabase/functions/payments`. La table `payments` n'est modifiable que par cette fonction (aucun droit d'écriture côté navigateur), et les montants sont toujours calculés à partir de la base, jamais envoyés par le client.
 
-Mise en place : migration `20261114000000_payments.sql`, déploiement de la fonction `payments`, secret `STRIPE_SECRET_KEY`, puis `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` dans `.env.local`, et enfin `update public.app_settings set payments_required = true;`.
+Mise en place : migration `20261114000000_payments.sql`, déploiement de la fonction `payments`, secret `STRIPE_SECRET_KEY`, puis `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` dans `.env.local` (et `NEXT_PUBLIC_PAYMENTS_FUNCTION` si l'adresse de la fonction n'est pas `payments`), et enfin `update public.app_settings set payments_required = true;`.
 
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
@@ -68,7 +68,8 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 |---|---|---|
 | `npm run test:e2e:api` | Le parcours hôte → conducteur via l'API, plus ~15 tentatives de triche qui doivent échouer (lire la clé QR d'un autre, forcer un prix, s'auto-confirmer, déclarer trop de kWh…) | ~1 min 30 |
 | `npm run test:e2e:ui` | Le même parcours dans un vrai navigateur, écran par écran, avec deux sessions (hôte et conducteur), y compris la désactivation puis la réactivation d'un spot. Captures dans `tests/e2e/screenshots/` | ~2 min 30 |
-| `npm run test:e2e` | Les deux à la suite | ~4 min |
+| `npm run test:e2e:payments` | Paiement Stripe en mode test : blocage du montant, carte de test Visa, prélèvement du montant réel, libération à l'annulation, tentatives de fraude | ~1 min 30 |
+| `npm run test:e2e` | API + navigateur à la suite | ~4 min |
 
 **Mise en place (une seule fois)**
 1. Créer deux comptes dédiés dans Supabase > Authentication > Users > *Add user*, en cochant *Auto Confirm User*. Astuce Gmail : `vous+hote@gmail.com` et `vous+conducteur@gmail.com` arrivent dans votre boîte.

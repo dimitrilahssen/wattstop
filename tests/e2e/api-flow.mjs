@@ -1,6 +1,6 @@
 // Parcours complet via l'API Supabase, avec la clé publique uniquement : la RLS est réellement testée.
 // Usage : npm run test:e2e:api
-import { login, client, reporter, sleep, crash, hideTestSpots, cancelOpenBookings, CHARGE_SECONDS, TEST_PREFIX } from "./lib.mjs";
+import { login, client, reporter, sleep, crash, hideTestSpots, cancelOpenBookings, CHARGE_SECONDS, TEST_PREFIX, paymentsRequired, payWithTestCard } from "./lib.mjs";
 
 const SPOT_COLUMNS = "id, host_id, title, description, address, connector_type, power_kw, price_per_kwh, access_instructions, photos, is_active, created_at";
 const { ok, expectErr, done } = reporter();
@@ -65,6 +65,7 @@ try {
   expectErr(await D.c.rpc("check_in", { p_qr_key: "0".repeat(32) }), "Check-in avec un faux QR refusé");
   const res = await D.c.rpc("resolve_qr", { p_qr_key: key });
   ok(res.data?.booking?.id === b.id && res.data?.is_host === false, "Conducteur : scan → spot et réservation reconnus", res.error?.message);
+  if (await paymentsRequired(D.c)) await payWithTestCard(D.c, b.id); // paiement obligatoire avant de démarrer
   const ci = await D.c.rpc("check_in", { p_qr_key: key });
   ok(ci.data?.status === "active", "Conducteur : check-in (début de recharge)", ci.error?.message);
   expectErr(await D.c.rpc("cancel_booking", { p_booking_id: b.id }), "Annulation impossible après check-in");

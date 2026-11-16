@@ -12,7 +12,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "test:e2e:api": "node tests/e2e/api-flow.mjs",
     "test:e2e:ui": "node tests/e2e/ui-flow.mjs",
-    "test:e2e": "npm run test:e2e:api && npm run test:e2e:ui"
+    "test:e2e": "npm run test:e2e:api && npm run test:e2e:ui",
+    "test:e2e:payments": "node tests/e2e/payments-flow.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^3.11.0",

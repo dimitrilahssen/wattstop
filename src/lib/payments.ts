@@ -5,13 +5,15 @@ export type PaymentStatus = "requires_authorization" | "authorized" | "captured"
 /** Paiements actifs côté interface dès que la clé publique Stripe est configurée. */
 export const STRIPE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 export const paymentsEnabled = STRIPE_PUBLISHABLE_KEY.startsWith("pk_");
+/** Adresse (slug) de l'Edge Function de paiement dans Supabase : visible dans son URL …/functions/v1/<slug>. */
+export const PAYMENTS_FUNCTION = process.env.NEXT_PUBLIC_PAYMENTS_FUNCTION || "payments";
 
 type Action = "authorize" | "sync" | "capture" | "release";
 export type PaymentResult = { status: PaymentStatus | "none"; client_secret?: string; amount_cents?: number | null };
 
 /** Appelle l'Edge Function « payments » avec la session de l'utilisateur. */
 export async function callPayments(action: Action, bookingId: string): Promise<PaymentResult> {
-  const { data, error } = await createClient().functions.invoke("payments", { body: { action, booking_id: bookingId } });
+  const { data, error } = await createClient().functions.invoke(PAYMENTS_FUNCTION, { body: { action, booking_id: bookingId } });
   if (error) {
     // Le message utile est dans le corps de la réponse de la fonction
     const body = await (error as { context?: Response }).context?.json?.().catch(() => null);

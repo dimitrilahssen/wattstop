@@ -47,7 +47,7 @@ export function PaymentStep({ bookingId, onAuthorized }: { bookingId: string; on
   );
 
   return (
-    <div className="card grid gap-3" data-testid="payment-step">
+    <div className="grid min-w-0 gap-3 border-t border-line pt-3" data-testid="payment-step">
       <div>
         <p className="font-semibold">💳 Paiement</p>
         <p className="text-sm text-muted">
@@ -98,8 +98,16 @@ function CardForm({ bookingId, onAuthorized, onError }: { bookingId: string; onA
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-3">
-      <PaymentElement options={{ layout: "tabs" }} />
+    <form onSubmit={submit} className="grid w-full min-w-0 gap-3">
+      {/* Bloc pleine largeur : sinon l'iframe Stripe se mesure trop étroite dans la grille */}
+      <div className="block w-full min-w-0">
+        <PaymentElement
+          options={{
+            layout: "tabs",
+            defaultValues: { billingDetails: { address: { country: "FR" } } },
+          }}
+        />
+      </div>
       <button className="btn-primary" disabled={!stripe || busy}>
         {busy ? "Validation…" : "Valider la carte"}
       </button>
