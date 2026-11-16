@@ -275,10 +275,13 @@ try {
     .select("id").single();
   await host.goto(`${BASE_URL}/host`);
   const hostCard = host.locator("article", { hasText: TITLE });
-  let dialogText = "";
-  host.once("dialog", (d) => { dialogText = d.message(); d.dismiss(); });
+  // L'app compte d'abord les réservations à venir : on attend la vraie fenêtre de confirmation
+  const dialogShown = host.waitForEvent("dialog", { timeout: 15000 });
   await hostCard.getByRole("button", { name: /Désactiver le spot/ }).click();
-  await host.waitForTimeout(800);
+  const dialog = await dialogShown;
+  const dialogText = dialog.message();
+  await dialog.dismiss();
+  await host.waitForTimeout(300);
   ok(/1 réservation à venir/.test(dialogText), "Hôte : avertissement des réservations à venir avant désactivation", dialogText.split("\n")[0]);
   ok(await hostCard.getByText("Actif", { exact: true }).isVisible(), "Hôte : annuler l'avertissement laisse le spot actif");
   await D.c.rpc("cancel_booking", { p_booking_id: future.id });
