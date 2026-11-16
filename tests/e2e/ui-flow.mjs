@@ -253,6 +253,8 @@ try {
   await shot(driver, "conducteur-termine");
   await driver.getByRole("link", { name: "Voir mes réservations" }).click();
   await driver.waitForURL(/\/bookings/, { timeout: 60000 });
+  // La page fait du travail côté serveur (expiration, prélèvement, reversement) : on attend son affichage
+  await driver.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).waitFor({ timeout: 30000 }).catch(() => {});
   ok(await driver.locator("article", { hasText: TITLE }).filter({ hasText: "Terminée" }).isVisible(), "Conducteur : historique « Terminée »");
   await shot(driver, "conducteur-historique");
   await liveToast(host, "Recharge terminée").waitFor({ timeout: 15000 }).catch(() => {});
