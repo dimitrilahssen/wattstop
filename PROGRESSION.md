@@ -41,12 +41,10 @@ En place et vérifiée sans intervention : une réservation payée mais non hono
 Réglages : migration `20261116120000_release_stale_holds.sql`, `app_settings.payments_function_url`, « Verify JWT » désactivé sur la fonction.
 Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38.
 
-## En cours : recharges oubliées
+## Recharges oubliées
 
-Code écrit et testé sur un Postgres local, à brancher :
-1. SQL Editor : exécuter `supabase/migrations/20261116180000_forgotten_charges.sql`.
-2. Edge Functions → fonction de paiement → onglet Code : coller la nouvelle version → Deploy.
-3. Lancer `npm run test:e2e:forgotten` (environ 1 h 10).
+En place et vérifiée en réel (`npm run test:e2e:forgotten`, 10/10) : recharge démarrée puis oubliée, clôturée automatiquement 62 min après la fin du créneau (« Relevé à saisir », durée facturable arrêtée à la fin du créneau), relevé de l'hôte plafonné par l'anti-fraude, 0,80 € prélevés puis reversés à l'hôte. Sans relevé sous 24 h : « Non facturée » et blocage libéré.
+Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38, recharge oubliée 10/10.
 
 ## Ensuite (idées)
 
