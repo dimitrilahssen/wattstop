@@ -13,6 +13,9 @@
 //   sync      : (conducteur) relit Stripe et enregistre « authorized » si la carte est validée
 //   capture   : (conducteur ou hôte) prélève le montant réel, puis transfère la part de l'hôte
 //   release   : (conducteur ou hôte) libère le blocage d'une réservation qui n'a pas eu lieu
+// Automatique (pg_cron toutes les 10 min, sans connexion) :
+//   release_stale : libère les montants encore bloqués des réservations non honorées, expirées,
+//                   annulées ou refusées. Ne peut ni prélever ni transférer : sans risque si appelé par d'autres.
 // Hôte (Stripe Connect, comptes Express) :
 //   connect_onboard   : crée le compte Stripe de l'hôte si besoin → lien du formulaire Stripe (origin requis)
 //   connect_status    : relit l'état du compte chez Stripe, transfère les sommes en attente
@@ -216,6 +219,41 @@ async function capture(b: Booking, userId: string) {
   return { status: "captured", amount_cents: pi.amount_received, payout_status: payout };
 }
 
+/** Statuts de réservation pour lesquels aucun argent ne doit rester bloqué. */
+const DEAD_BOOKING_STATUSES = ["no_show", "expired", "cancelled", "rejected"];
+
+/**
+ * Libère les blocages caducs. La liste vient de la base (réservations qui n'auront pas lieu),
+ * chaque paiement est revérifié chez Stripe avant d'être libéré. Par lots de 50.
+ */
+async function releaseStale() {
+  const { data, error } = await admin
+    .from("payments")
+    .select("*, booking:bookings!inner(id, status)")
+    .in("status", ["authorized", "requires_authorization"])
+    .in("booking.status", DEAD_BOOKING_STATUSES)
+    .limit(50);
+  if (error) throw new HttpError(500, error.message);
+  let released = 0;
+  const failures: string[] = [];
+  for (const p of (data ?? []) as Payment[]) {
+    try {
+      const { status } = await syncFromStripe(p);
+      if (status === "authorized" || status === "requires_authorization") {
+        await stripe.paymentIntents.cancel(p.stripe_payment_intent_id, undefined, { idempotencyKey: `release-${p.booking_id}` });
+      }
+      if (status !== "captured") {
+        await updatePayment(p.booking_id, { status: "canceled" });
+        released++;
+      }
+    } catch (e) {
+      console.error("Libération impossible", p.booking_id, e);
+      failures.push(p.booking_id);
+    }
+  }
+  return { released, failed: failures.length };
+}
+
 // ---------------------------------------------------------------------------
 // Reversement à l'hôte (Stripe Connect)
 // ---------------------------------------------------------------------------
@@ -382,9 +420,12 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Méthode non autorisée" }, 405);
   try {
     if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant dans les secrets de la fonction");
-    const user = await currentUser(req);
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const { action, booking_id } = body;
+    // Seule action sans connexion (tâche planifiée) : elle ne fait que libérer des blocages caducs
+    if (action === "release_stale") return json(await releaseStale());
+
+    const user = await currentUser(req);
 
     const hostActions = { connect_onboard: connectOnboard, connect_status: connectStatus, connect_dashboard: connectDashboard } as const;
     const hostHandler = hostActions[action as keyof typeof hostActions];

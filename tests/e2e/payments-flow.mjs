@@ -70,6 +70,17 @@ try {
   ok(ci.data?.status === "active", "Check-in après paiement", ci.error?.message);
   const early = await pay(D.c, "capture", b1);
   ok(early.http === 409, "Prélèvement refusé tant que la recharge n'est pas terminée", early.error);
+  // 3 ter. Préparation : réservation payée sur un 2e spot, mais le conducteur ne viendra pas
+  const title2 = `${TEST_PREFIX} Borne absente ${Date.now().toString().slice(-5)}`;
+  await H.c.from("spots").insert({ host_id: H.id, title: title2, address: "2 rue du Test, Paris", connector_type: "type2", power_kw: 7.4, price_per_kwh: 0.3, location: "SRID=4326;POINT(2.351 48.851)" });
+  const { data: spot2 } = await H.c.from("spots").select("id").eq("title", title2).single();
+  const { data: ns } = await D.c.from("bookings").insert({ spot_id: spot2.id, driver_id: D.id, start_at: new Date(Date.now() + 10_000).toISOString(), end_at: new Date(Date.now() + 40_000).toISOString() }).select("id").single();
+  await H.c.rpc("respond_booking", { p_booking_id: ns.id, p_accept: true });
+  const nsAuth = await pay(D.c, "authorize", ns.id);
+  await confirmWithTestCard(nsAuth.client_secret);
+  await pay(D.c, "sync", ns.id);
+  ok((await paymentRow(D.c, ns.id))?.status === "authorized", "Non honorée : montant bloqué avant le créneau (le conducteur ne viendra pas)");
+
   console.log(`… recharge simulée de ${CHARGE_SECONDS} s`);
   await sleep(CHARGE_SECONDS * 1000);
   const co = await D.c.rpc("check_out", { p_qr_key: key, p_energy_kwh: 0.4 });
@@ -105,6 +116,15 @@ try {
   const others = (await D.c.from("host_payout_accounts").select("host_id")).data ?? [];
   ok(others.length === 0, "Conducteur : ne voit pas le compte de l'hôte");
   expectErr(await H.c.from("host_payout_accounts").update({ transfers_active: true }).eq("host_id", H.id).select(), "Hôte : impossible de se déclarer « activé » lui-même");
+
+  // 3 quater. Créneau passé sans recharge → « non honorée » → la tâche automatique libère le blocage
+  await D.c.rpc("expire_bookings");
+  ok((await D.c.from("bookings").select("status").eq("id", ns.id).single()).data?.status === "no_show", "Non honorée : réservation passée en « no_show »");
+  const auto = await pay(null, "release_stale"); // appel sans connexion, comme la tâche planifiée
+  ok(auto.http === 200 && auto.released >= 1, "Libération automatique : appel sans connexion accepté", JSON.stringify(auto));
+  ok((await paymentRow(D.c, ns.id))?.status === "canceled", "Non honorée : montant bloqué libéré chez Stripe");
+  const again2 = await pay(null, "release_stale");
+  ok(again2.http === 200 && (await paymentRow(D.c, b1))?.status === "captured", "Libération automatique : ne touche jamais une recharge payée");
 
   // 4. Réservation annulée après blocage : le montant est libéré
   const b2 = await book(65, 125);

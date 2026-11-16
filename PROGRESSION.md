@@ -35,11 +35,19 @@ Branché et testé (sandbox Stripe « wattstop », Connect activé, comptes Expr
 - Compte hôte de test activé : 4,80 € reversés au total.
 - Derniers résultats : paiement 28/28, API 41/41, navigateur 38/38.
 
+## En cours : libération automatique des montants bloqués
+
+Code écrit et poussé, à brancher :
+1. SQL Editor : exécuter `supabase/migrations/20261116120000_release_stale_holds.sql`, puis
+   `update public.app_settings set payments_function_url = 'https://njyiqjosvdbwbgipljof.supabase.co/functions/v1/clever-api';`
+2. Edge Functions → fonction de paiement → onglet Code : coller la nouvelle version → Deploy.
+3. Même fonction → Details/Settings : désactiver « Verify JWT » (la fonction vérifie elle-même les utilisateurs).
+4. Relancer `npm run test:e2e:payments`.
+
 ## Ensuite (idées)
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
 - Passage en mode réel Stripe (clés live) quand le compte sera vérifié
-- Libérer automatiquement les montants bloqués des réservations « non honorées »
 - Clôturer les recharges oubliées (pas de check-out)
 - Notifications push quand l'app est fermée (Web Push)
 
