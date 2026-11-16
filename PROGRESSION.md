@@ -10,7 +10,7 @@ _Dernière mise à jour : 16/11/2026_
 - Désactiver / réactiver un spot (l'historique du conducteur garde le nom du spot)
 - Notifications en temps réel (Supabase Realtime) + pastille sur l'onglet Résas
 - Expiration automatique : `expired` (demande sans réponse) et `no_show` (jamais démarrée), tâche `pg_cron` toutes les 5 min
-- Tests de bout en bout : `npm run test:e2e` (API 41/41, navigateur 35/35)
+- Tests de bout en bout : `npm run test:e2e` (API 41/41, navigateur 38/38) et `npm run test:e2e:payments` (21/21)
 
 Migrations déjà appliquées dans Supabase :
 - `20261111000000_init_wattstop.sql`
@@ -24,8 +24,8 @@ Branché et testé sur la vraie base et le compte Stripe (sandbox) :
 - `npm run test:e2e:payments` : 20/20 (blocage, carte de test, prélèvement réel, libération, fraudes refusées).
 - Test navigateur : la vraie saisie de carte Stripe passe (38/38).
 
-Reste à faire : rendre le paiement obligatoire au démarrage avec
-`update public.app_settings set payments_required = true;` (SQL Editor), puis relancer `npm run test:e2e:payments`.
+Paiement **obligatoire** au démarrage (`app_settings.payments_required = true`) : la base refuse le check-in sans carte validée.
+Derniers résultats : paiement 21/21, API 41/41, navigateur 38/38.
 
 ## Ensuite (idées)
 
