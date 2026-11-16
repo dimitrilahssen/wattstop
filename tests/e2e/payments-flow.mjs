@@ -80,6 +80,32 @@ try {
   ok(cap2.http === 200 && cap2.status === "captured" && cap2.amount_cents === 80, "Prélever deux fois ne débite pas deux fois", JSON.stringify(cap2));
   ok((await paymentRow(D.c, b1))?.status === "captured", "Base : paiement « captured »");
 
+  // 3 bis. Reversement à l'hôte (Stripe Connect)
+  const hostAccount = (await H.c.from("host_payout_accounts").select("transfers_active").maybeSingle()).data;
+  const row1 = await paymentRow(H.c, b1);
+  if (hostAccount?.transfers_active) {
+    ok(row1?.payout_status === "transferred" && !!row1?.stripe_transfer_id, "Reversement : 0,80 € transférés sur le compte Stripe de l'hôte", JSON.stringify({ payout: row1?.payout_status, transfer: row1?.stripe_transfer_id }));
+  } else {
+    ok(row1?.payout_status === "awaiting_host_account" && row1?.host_amount_cents === 80, "Reversement : sans compte activé, la part de l'hôte est mise de côté", JSON.stringify({ payout: row1?.payout_status, part: row1?.host_amount_cents }));
+  }
+  const st = await pay(H.c, "connect_status");
+  ok(st.http === 200 && (hostAccount?.transfers_active ? st.transferred_cents >= 80 : st.pending_cents >= 80), "Hôte : voit ses gains reversés ou en attente", JSON.stringify(st));
+  const noOrigin = await pay(H.c, "connect_onboard");
+  ok(noOrigin.http === 400, "Activation : adresse de retour obligatoire", noOrigin.error);
+  const badOrigin = await callPayments(H.c, "connect_onboard", undefined, { origin: "javascript:alert(1)" });
+  ok(badOrigin.http === 400, "Activation : adresse de retour piégée refusée", badOrigin.error);
+  const notHost = await callPayments(D.c, "connect_onboard", undefined, { origin: "http://localhost:3000" });
+  ok(notHost.http === 403, "Activation : réservée aux hôtes", notHost.error);
+  if (!hostAccount?.transfers_active) {
+    const onb = await callPayments(H.c, "connect_onboard", undefined, { origin: "http://localhost:3000" });
+    ok(onb.http === 200 && /^https:\/\/connect\.stripe\.com\//.test(onb.url ?? ""), "Activation : lien vers le formulaire Stripe créé", onb.url ? onb.url.slice(0, 48) + "…" : onb.error);
+    const mine = (await H.c.from("host_payout_accounts").select("stripe_account_id").maybeSingle()).data;
+    ok(/^acct_/.test(mine?.stripe_account_id ?? ""), "Activation : compte Stripe de l'hôte enregistré", mine?.stripe_account_id);
+  }
+  const others = (await D.c.from("host_payout_accounts").select("host_id")).data ?? [];
+  ok(others.length === 0, "Conducteur : ne voit pas le compte de l'hôte");
+  expectErr(await H.c.from("host_payout_accounts").update({ transfers_active: true }).eq("host_id", H.id).select(), "Hôte : impossible de se déclarer « activé » lui-même");
+
   // 4. Réservation annulée après blocage : le montant est libéré
   const b2 = await book(65, 125);
   const tooEarly = await pay(D.c, "authorize", b2);

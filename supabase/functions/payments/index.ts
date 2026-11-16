@@ -5,12 +5,21 @@
 //   STRIPE_SECRET_KEY            sk_test_… (jamais dans le code ni dans le navigateur)
 // Fournis automatiquement par Supabase : SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 //
-// Appel : POST /functions/v1/payments  { action, booking_id }  avec le jeton de l'utilisateur.
+// Secret optionnel : PLATFORM_FEE_PERCENT (commission WattStop en %, 0 par défaut)
+//
+// Appel : POST /functions/v1/<adresse>  { action, … }  avec le jeton de l'utilisateur.
+// Réservation (booking_id) :
 //   authorize : (conducteur) crée ou reprend le blocage du montant maximal → client_secret
 //   sync      : (conducteur) relit Stripe et enregistre « authorized » si la carte est validée
-//   capture   : (conducteur ou hôte) prélève le montant réel d'une recharge terminée
+//   capture   : (conducteur ou hôte) prélève le montant réel, puis transfère la part de l'hôte
 //   release   : (conducteur ou hôte) libère le blocage d'une réservation qui n'a pas eu lieu
+// Hôte (Stripe Connect, comptes Express) :
+//   connect_onboard   : crée le compte Stripe de l'hôte si besoin → lien du formulaire Stripe (origin requis)
+//   connect_status    : relit l'état du compte chez Stripe, transfère les sommes en attente
+//   connect_dashboard : lien vers l'espace Stripe de l'hôte (virements, IBAN)
 //
+// Modèle : la plateforme encaisse, puis transfère la part de l'hôte (« separate charges and transfers »).
+// Si l'hôte n'a pas encore activé ses paiements, sa part attend et part dès l'activation.
 // Les montants viennent TOUJOURS de la base, jamais de la requête.
 // =============================================================================
 import Stripe from "npm:stripe@17.7.0";
@@ -26,6 +35,7 @@ const admin = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY
 
 const MIN_CHARGE_CENTS = 50; // minimum Stripe en euros
 const HOLD_MARGIN = 1.05; // même tolérance que le plafond anti-fraude du check-out
+const PLATFORM_FEE_PERCENT = Math.min(100, Math.max(0, Number(Deno.env.get("PLATFORM_FEE_PERCENT") ?? "0") || 0));
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -57,14 +67,25 @@ type Payment = {
   status: string;
   amount_authorized_cents: number;
   amount_captured_cents: number | null;
+  payout_status?: string;
+  host_amount_cents?: number | null;
+  platform_fee_cents?: number | null;
+  stripe_transfer_id?: string | null;
+};
+type PayoutAccount = {
+  host_id: string;
+  stripe_account_id: string;
+  details_submitted: boolean;
+  payouts_enabled: boolean;
+  transfers_active: boolean;
 };
 
-async function currentUserId(req: Request) {
+async function currentUser(req: Request) {
   const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) throw new HttpError(401, "Authentification requise");
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) throw new HttpError(401, "Session invalide");
-  return data.user.id;
+  return data.user;
 }
 
 async function loadBooking(id: string): Promise<Booking> {
@@ -170,6 +191,11 @@ async function capture(b: Booking, userId: string) {
   const p = await loadPayment(b.id);
   if (!p) return { status: "none" };
   const { status } = await syncFromStripe(p);
+  if (status === "captured") {
+    // Déjà prélevé (nouvel appel) : on retente seulement le reversement s'il n'est pas fait
+    const fresh = (await loadPayment(b.id))!;
+    return { status, amount_cents: fresh.amount_captured_cents, payout_status: await payoutPayment(fresh, b.host_id) };
+  }
   if (status !== "authorized") return { status, amount_cents: p.amount_captured_cents };
 
   const due = Math.round(Number(b.total_price) * 100);
@@ -186,7 +212,155 @@ async function capture(b: Booking, userId: string) {
     { idempotencyKey: `capture-${b.id}` },
   );
   await updatePayment(b.id, { status: "captured", amount_captured_cents: pi.amount_received });
-  return { status: "captured", amount_cents: pi.amount_received };
+  const payout = await payoutPayment({ ...p, status: "captured", amount_captured_cents: pi.amount_received }, b.host_id);
+  return { status: "captured", amount_cents: pi.amount_received, payout_status: payout };
+}
+
+// ---------------------------------------------------------------------------
+// Reversement à l'hôte (Stripe Connect)
+// ---------------------------------------------------------------------------
+
+/** Relit le compte Stripe de l'hôte et met la base à jour. null si l'hôte n'a pas encore commencé. */
+async function refreshAccount(hostId: string): Promise<PayoutAccount | null> {
+  const { data } = await admin.from("host_payout_accounts").select("*").eq("host_id", hostId).maybeSingle();
+  if (!data) return null;
+  const acc = await stripe.accounts.retrieve(data.stripe_account_id);
+  const fresh = {
+    details_submitted: !!acc.details_submitted,
+    payouts_enabled: !!acc.payouts_enabled,
+    transfers_active: acc.capabilities?.transfers === "active",
+  };
+  if (fresh.details_submitted !== data.details_submitted || fresh.payouts_enabled !== data.payouts_enabled || fresh.transfers_active !== data.transfers_active) {
+    await admin.from("host_payout_accounts").update(fresh).eq("host_id", hostId);
+  }
+  return { ...(data as PayoutAccount), ...fresh };
+}
+
+/**
+ * Transfère la part de l'hôte d'un paiement prélevé. Idempotent : un paiement n'est transféré qu'une fois.
+ * Renvoie l'état du reversement.
+ */
+async function payoutPayment(p: Payment, hostId: string, account?: PayoutAccount | null): Promise<string> {
+  const captured = p.amount_captured_cents ?? 0;
+  if (p.status !== "captured" || captured <= 0) return "none";
+  if (p.payout_status === "transferred") return "transferred";
+  const fee = Math.round((captured * PLATFORM_FEE_PERCENT) / 100);
+  const hostAmount = captured - fee;
+  const acct = account === undefined ? await refreshAccount(hostId) : account;
+  if (!acct?.transfers_active) {
+    await updatePayment(p.booking_id, { payout_status: "awaiting_host_account", host_amount_cents: hostAmount, platform_fee_cents: fee });
+    return "awaiting_host_account";
+  }
+  try {
+    const pi = await stripe.paymentIntents.retrieve(p.stripe_payment_intent_id);
+    const transfer = await stripe.transfers.create(
+      {
+        amount: hostAmount,
+        currency: "eur",
+        destination: acct.stripe_account_id,
+        // Lié au paiement : le transfert part même si les fonds ne sont pas encore disponibles
+        source_transaction: typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge?.id,
+        transfer_group: `booking_${p.booking_id}`,
+        metadata: { booking_id: p.booking_id, host_id: hostId },
+      },
+      { idempotencyKey: `transfer-${p.booking_id}` },
+    );
+    await updatePayment(p.booking_id, {
+      payout_status: "transferred",
+      host_amount_cents: hostAmount,
+      platform_fee_cents: fee,
+      stripe_transfer_id: transfer.id,
+    });
+    return "transferred";
+  } catch (e) {
+    // On réessaiera au prochain passage (ouverture de « Mes spots », nouveau prélèvement…)
+    console.error("Transfert à l'hôte impossible", p.booking_id, e);
+    await updatePayment(p.booking_id, { payout_status: "awaiting_host_account", host_amount_cents: hostAmount, platform_fee_cents: fee });
+    return "awaiting_host_account";
+  }
+}
+
+/** Transfère toutes les sommes de l'hôte encore en attente, et renvoie les totaux. */
+async function sweepHost(hostId: string, account: PayoutAccount | null) {
+  const { data } = await admin
+    .from("payments")
+    .select("*, booking:bookings!inner(host_id)")
+    .eq("booking.host_id", hostId)
+    .eq("status", "captured");
+  let pending = 0, transferred = 0;
+  for (const p of (data ?? []) as Payment[]) {
+    const state = await payoutPayment(p, hostId, account);
+    const amount = p.host_amount_cents ?? Math.round((p.amount_captured_cents ?? 0) * (1 - PLATFORM_FEE_PERCENT / 100));
+    if (state === "transferred") transferred += amount;
+    else if (state === "awaiting_host_account") pending += amount;
+  }
+  return { pending_cents: pending, transferred_cents: transferred };
+}
+
+/** Origine de l'app pour les liens de retour du formulaire Stripe (http/https uniquement). */
+function appOrigin(origin: unknown) {
+  if (typeof origin !== "string") throw new HttpError(400, "origin manquant");
+  let url: URL;
+  try { url = new URL(origin); } catch { throw new HttpError(400, "origin invalide"); }
+  if (!["http:", "https:"].includes(url.protocol)) throw new HttpError(400, "origin invalide");
+  const allowed = (Deno.env.get("APP_ORIGINS") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (allowed.length && !allowed.includes(url.origin)) throw new HttpError(400, "origin non autorisée");
+  return url.origin;
+}
+
+async function isHost(userId: string) {
+  const { data } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
+  return data?.role === "host" || data?.role === "both";
+}
+
+async function connectOnboard(user: { id: string; email?: string }, body: Record<string, unknown>) {
+  if (!(await isHost(user.id))) throw new HttpError(403, "Publiez d'abord un spot pour devenir hôte");
+  const origin = appOrigin(body.origin);
+  let row = (await admin.from("host_payout_accounts").select("*").eq("host_id", user.id).maybeSingle()).data as PayoutAccount | null;
+  if (!row) {
+    const acc = await stripe.accounts.create(
+      {
+        type: "express",
+        country: "FR",
+        email: user.email,
+        business_type: "individual",
+        capabilities: { transfers: { requested: true } },
+        business_profile: { product_description: "Recharge de véhicules électriques entre particuliers (WattStop)", mcc: "5552" },
+        metadata: { host_id: user.id },
+      },
+      { idempotencyKey: `connect-account-${user.id}` },
+    );
+    const { error } = await admin.from("host_payout_accounts").insert({ host_id: user.id, stripe_account_id: acc.id });
+    if (error) throw new HttpError(500, error.message);
+    row = { host_id: user.id, stripe_account_id: acc.id, details_submitted: false, payouts_enabled: false, transfers_active: false };
+  }
+  const link = await stripe.accountLinks.create({
+    account: row.stripe_account_id,
+    type: "account_onboarding",
+    refresh_url: `${origin}/host?stripe=refresh`,
+    return_url: `${origin}/host?stripe=return`,
+  });
+  return { url: link.url };
+}
+
+async function connectStatus(user: { id: string }) {
+  const account = await refreshAccount(user.id);
+  const totals = await sweepHost(user.id, account);
+  return {
+    account: account && {
+      details_submitted: account.details_submitted,
+      payouts_enabled: account.payouts_enabled,
+      transfers_active: account.transfers_active,
+    },
+    ...totals,
+  };
+}
+
+async function connectDashboard(user: { id: string }) {
+  const account = await refreshAccount(user.id);
+  if (!account?.details_submitted) throw new HttpError(409, "Terminez d'abord l'activation de vos paiements");
+  const link = await stripe.accounts.createLoginLink(account.stripe_account_id);
+  return { url: link.url };
 }
 
 async function release(b: Booking, userId: string) {
@@ -208,14 +382,20 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Méthode non autorisée" }, 405);
   try {
     if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant dans les secrets de la fonction");
-    const userId = await currentUserId(req);
-    const { action, booking_id } = await req.json().catch(() => ({}));
+    const user = await currentUser(req);
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const { action, booking_id } = body;
+
+    const hostActions = { connect_onboard: connectOnboard, connect_status: connectStatus, connect_dashboard: connectDashboard } as const;
+    const hostHandler = hostActions[action as keyof typeof hostActions];
+    if (hostHandler) return json(await hostHandler(user, body));
+
     if (typeof booking_id !== "string" || !/^[0-9a-f-]{36}$/i.test(booking_id)) throw new HttpError(400, "booking_id invalide");
     const booking = await loadBooking(booking_id);
     const handlers = { authorize, sync, capture, release } as const;
     const handler = handlers[action as keyof typeof handlers];
     if (!handler) throw new HttpError(400, "Action inconnue");
-    return json(await handler(booking, userId));
+    return json(await handler(booking, user.id));
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message }, e.status);
     if (e instanceof Stripe.errors.StripeError) return json({ error: `Stripe : ${e.message}` }, 402);

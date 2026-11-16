@@ -95,12 +95,12 @@ export const STRIPE_PK = env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 export const PAYMENTS_FUNCTION = env.NEXT_PUBLIC_PAYMENTS_FUNCTION || "payments";
 
 /** Appelle l'Edge Function de paiement avec la session d'un client Supabase (ou sans session). */
-export async function callPayments(c, action, bookingId) {
+export async function callPayments(c, action, bookingId, extra = {}) {
   const token = c ? (await c.auth.getSession()).data.session?.access_token : null;
   const res = await fetch(`${SUPABASE_URL}/functions/v1/${PAYMENTS_FUNCTION}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ action, booking_id: bookingId }),
+    body: JSON.stringify({ action, booking_id: bookingId, ...extra }),
   });
   const body = await res.json().catch(() => ({}));
   return { http: res.status, ...body };

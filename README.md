@@ -57,6 +57,8 @@ Pré-autorisation au démarrage, prélèvement du montant réel à la fin. Les p
 3. **Check-out** : la fonction prélève `total_price` calculé par la base (au plus le montant bloqué) et libère le reste. Sous 0,50 € (minimum Stripe), rien n'est prélevé.
 4. **Annulation** avant démarrage : le blocage est libéré.
 
+**Reversement aux hôtes (Stripe Connect, comptes Express)** : dans « Mes spots », l'hôte active ses paiements via le formulaire hébergé par Stripe (identité, IBAN). Après chaque prélèvement, sa part (montant prélevé moins la commission `PLATFORM_FEE_PERCENT`, 0 % par défaut) lui est transférée. Tant qu'il n'a pas activé ses paiements, sa part est mise de côté (`payout_status = awaiting_host_account`) et part automatiquement à l'activation. La plateforme encaisse puis transfère (« separate charges and transfers »).
+
 Sécurité : la clé secrète Stripe n'existe que dans les secrets de l'Edge Function `supabase/functions/payments`. La table `payments` n'est modifiable que par cette fonction (aucun droit d'écriture côté navigateur), et les montants sont toujours calculés à partir de la base, jamais envoyés par le client.
 
 Mise en place : migration `20261114000000_payments.sql`, déploiement de la fonction `payments`, secret `STRIPE_SECRET_KEY`, puis `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` dans `.env.local` (et `NEXT_PUBLIC_PAYMENTS_FUNCTION` si l'adresse de la fonction n'est pas `payments`), et enfin `update public.app_settings set payments_required = true;`.

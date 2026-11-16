@@ -4,6 +4,8 @@ import { CONNECTOR_LABELS, eur } from "@/lib/format";
 import { SpotForm } from "@/components/spot-form";
 import { SpotQr } from "@/components/spot-qr";
 import { SpotActiveToggle } from "@/components/spot-active-toggle";
+import { HostPayouts } from "@/components/host-payouts";
+import { Suspense } from "react";
 
 export const metadata = { title: "Mes spots" };
 
@@ -24,6 +26,10 @@ export default async function HostPage() {
   return (
     <section className="grid gap-6">
       <h1 className="text-2xl font-bold">Mes spots</h1>
+      {/* useSearchParams (retour du formulaire Stripe) exige une frontière Suspense */}
+      <Suspense fallback={null}>
+        <HostPayouts />
+      </Suspense>
       {spots.map((s) => (
         <article key={s.id} className={`card grid gap-3 ${s.is_active ? "" : "bg-soft"}`}>
           <div className="flex items-start justify-between gap-2">

@@ -23,3 +23,21 @@ export async function callPayments(action: Action, bookingId: string): Promise<P
 }
 
 export const centsToEur = (cents: number) => cents / 100;
+
+// ---------- Reversement aux hôtes (Stripe Connect) ----------
+export type PayoutStatus = "none" | "awaiting_host_account" | "transferred" | "failed";
+export type ConnectStatus = {
+  account: { details_submitted: boolean; payouts_enabled: boolean; transfers_active: boolean } | null;
+  pending_cents: number;
+  transferred_cents: number;
+};
+
+/** Actions de l'hôte sur son compte de reversement (formulaire Stripe, état, espace Stripe). */
+export async function callConnect<T>(action: "connect_onboard" | "connect_status" | "connect_dashboard", extra: Record<string, unknown> = {}): Promise<T> {
+  const { data, error } = await createClient().functions.invoke(PAYMENTS_FUNCTION, { body: { action, ...extra } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? error.message);
+  }
+  return data as T;
+}

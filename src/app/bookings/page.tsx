@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Booking } from "@/types/db";
 import { dateTime, eur, kwh } from "@/lib/format";
 import { BookingActions } from "@/components/booking-actions";
-import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus } from "@/lib/payments";
+import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus, type PayoutStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
 
@@ -41,15 +41,16 @@ export default async function BookingsPage() {
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
   const BASE = "*, spot:spots(title, address), driver:profiles!bookings_driver_id_fkey(full_name)";
   const list = (columns: string) => supabase.from("bookings").select(columns).order("start_at", { ascending: false }).limit(50);
-  let { data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents)`);
-  // Base sans la migration des paiements (table payments absente) : on liste quand même les réservations
+  let { data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents, payout_status, host_amount_cents)`);
+  // Bases plus anciennes : sans les colonnes de reversement, puis sans la table payments
+  if (error) ({ data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents)`));
   if (error) ({ data, error } = await list(BASE));
   if (error) console.error("Réservations :", error.message);
 
   const bookings = (data ?? []) as unknown as (Booking & {
     spot: { title: string; address: string } | null;
     driver: { full_name: string | null } | null;
-    payment: { status: PaymentStatus; amount_authorized_cents: number; amount_captured_cents: number | null } | null;
+    payment: Payment | null;
   })[];
 
   // Filet de sécurité : une recharge terminée dont le montant est encore seulement bloqué
@@ -59,7 +60,7 @@ export default async function BookingsPage() {
     await Promise.all(toCapture.map((b) => supabase.functions.invoke(PAYMENTS_FUNCTION, { body: { action: "capture", booking_id: b.id } })));
     const { data: fresh } = await supabase
       .from("payments")
-      .select("booking_id, status, amount_authorized_cents, amount_captured_cents")
+      .select("booking_id, status, amount_authorized_cents, amount_captured_cents, payout_status, host_amount_cents")
       .in("booking_id", toCapture.map((b) => b.id));
     for (const p of fresh ?? []) {
       const b = bookings.find((x) => x.id === p.booking_id);
@@ -103,18 +104,32 @@ export default async function BookingsPage() {
   );
 }
 
+type Payment = {
+  status: PaymentStatus;
+  amount_authorized_cents: number;
+  amount_captured_cents: number | null;
+  payout_status?: PayoutStatus;
+  host_amount_cents?: number | null;
+};
+
 function PaymentLine({
   payment: p,
   asHost,
 }: {
-  payment: { status: PaymentStatus; amount_authorized_cents: number; amount_captured_cents: number | null };
+  payment: Payment;
   asHost: boolean;
 }) {
   const amount = (cents: number | null) => eur((cents ?? 0) / 100);
   const text: Record<PaymentStatus, string> = {
     requires_authorization: "Carte pas encore validée",
     authorized: `${amount(p.amount_authorized_cents)} bloqués sur la carte (pas encore prélevés)`,
-    captured: asHost ? `${amount(p.amount_captured_cents)} encaissés` : `${amount(p.amount_captured_cents)} payés`,
+    captured: !asHost
+      ? `${amount(p.amount_captured_cents)} payés`
+      : p.payout_status === "transferred"
+        ? `${amount(p.amount_captured_cents)} encaissés · ${amount(p.host_amount_cents ?? p.amount_captured_cents)} reversés sur votre compte`
+        : p.payout_status === "awaiting_host_account"
+          ? `${amount(p.amount_captured_cents)} encaissés · reversement en attente : activez vos paiements dans Mes spots`
+          : `${amount(p.amount_captured_cents)} encaissés`,
     waived: "Moins de 0,50 € : rien n'a été prélevé",
     canceled: "Montant bloqué libéré, rien n'a été prélevé",
     failed: "Échec du paiement",

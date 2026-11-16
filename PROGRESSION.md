@@ -27,9 +27,17 @@ Branché et testé sur la vraie base et le compte Stripe (sandbox) :
 Paiement **obligatoire** au démarrage (`app_settings.payments_required = true`) : la base refuse le check-in sans carte validée.
 Derniers résultats : paiement 21/21, API 41/41, navigateur 38/38.
 
+## En cours : reversement aux hôtes (Stripe Connect)
+
+Code écrit et poussé, à brancher :
+1. Stripe (sandbox) : activer **Connect** (menu Connect → Commencer), plateforme « place de marché », comptes **Express**.
+2. Supabase, SQL Editor : exécuter `supabase/migrations/20261116000000_connect_payouts.sql`.
+3. Supabase, Edge Functions : ouvrir la fonction (adresse `clever-api`) → onglet Code → coller la nouvelle version de `supabase/functions/payments/index.ts` → Deploy.
+4. Tester : `npm run test:e2e:payments`, puis activer les paiements du compte hôte de test (formulaire Stripe en mode test) et vérifier le transfert.
+
 ## Ensuite (idées)
 
-- Reversement automatique aux hôtes (Stripe Connect) et commission éventuelle
+- Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
 - Passage en mode réel Stripe (clés live) quand le compte sera vérifié
 - Libérer automatiquement les montants bloqués des réservations « non honorées »
 - Clôturer les recharges oubliées (pas de check-out)
