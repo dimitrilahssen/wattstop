@@ -10,7 +10,7 @@ _Dernière mise à jour : 16/11/2026_
 - Désactiver / réactiver un spot (l'historique du conducteur garde le nom du spot)
 - Notifications en temps réel (Supabase Realtime) + pastille sur l'onglet Résas
 - Expiration automatique : `expired` (demande sans réponse) et `no_show` (jamais démarrée), tâche `pg_cron` toutes les 5 min
-- Tests de bout en bout : `npm run test:e2e` (API 41/41, navigateur 38/38) et `npm run test:e2e:payments` (21/21)
+- Tests de bout en bout : `npm run test:e2e` (API 41/41, navigateur 38/38) et `npm run test:e2e:payments` (28/28)
 
 Migrations déjà appliquées dans Supabase :
 - `20261111000000_init_wattstop.sql`
@@ -25,15 +25,15 @@ Branché et testé sur la vraie base et le compte Stripe (sandbox) :
 - Test navigateur : la vraie saisie de carte Stripe passe (38/38).
 
 Paiement **obligatoire** au démarrage (`app_settings.payments_required = true`) : la base refuse le check-in sans carte validée.
-Derniers résultats : paiement 21/21, API 41/41, navigateur 38/38.
+Paiement obligatoire au démarrage depuis le 16/11/2026.
 
-## En cours : reversement aux hôtes (Stripe Connect)
+## Reversement aux hôtes (Stripe Connect)
 
-Code écrit et poussé, à brancher :
-1. Stripe (sandbox) : activer **Connect** (menu Connect → Commencer), plateforme « place de marché », comptes **Express**.
-2. Supabase, SQL Editor : exécuter `supabase/migrations/20261116000000_connect_payouts.sql`.
-3. Supabase, Edge Functions : ouvrir la fonction (adresse `clever-api`) → onglet Code → coller la nouvelle version de `supabase/functions/payments/index.ts` → Deploy.
-4. Tester : `npm run test:e2e:payments`, puis activer les paiements du compte hôte de test (formulaire Stripe en mode test) et vérifier le transfert.
+Branché et testé (sandbox Stripe « wattstop », Connect activé, comptes Express) :
+- Migration `20261116000000_connect_payouts.sql` appliquée, fonction mise à jour.
+- L'hôte active ses paiements depuis « Mes spots » (formulaire Stripe), sa part est transférée après chaque prélèvement ; avant activation, elle est mise de côté puis transférée automatiquement.
+- Compte hôte de test activé : 4,80 € reversés au total.
+- Derniers résultats : paiement 28/28, API 41/41, navigateur 38/38.
 
 ## Ensuite (idées)
 
