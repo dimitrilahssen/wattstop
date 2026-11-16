@@ -19,6 +19,8 @@ function describe(change: Change, role: "host" | "driver", spotTitle: string) {
     if (b.status === "cancelled") return { title: "Réservation annulée par le conducteur", body: spotTitle };
     if (b.status === "expired") return { title: "⏰ Demande expirée sans réponse", body: spotTitle };
     if (b.status === "no_show") return { title: "Le conducteur ne s'est pas présenté", body: spotTitle };
+    if (b.status === "awaiting_meter") return { title: "⏰ Recharge oubliée : déclarez les kWh relevés", body: spotTitle };
+    if (b.status === "unbilled") return { title: "Recharge oubliée clôturée sans facturation", body: spotTitle };
     if (b.status === "active") return { title: "⚡ Recharge démarrée", body: spotTitle };
     if (b.status === "completed")
       return { title: "✅ Recharge terminée", body: `${spotTitle} · ${kwh(b.energy_kwh ?? 0)} · ${eur(b.total_price ?? 0)}` };
@@ -30,6 +32,9 @@ function describe(change: Change, role: "host" | "driver", spotTitle: string) {
   if (b.status === "cancelled") return { title: "Réservation annulée par l'hôte", body: spotTitle };
   if (b.status === "expired") return { title: "⏰ Demande expirée : l'hôte n'a pas répondu à temps", body: spotTitle };
   if (b.status === "no_show") return { title: "Réservation non honorée : créneau terminé sans recharge", body: spotTitle };
+  if (b.status === "awaiting_meter") return { title: "⏰ Recharge clôturée automatiquement", body: `${spotTitle} · vous aviez oublié de la terminer` };
+  if (b.status === "completed") return { title: "✅ Recharge facturée", body: `${spotTitle} · ${kwh(b.energy_kwh ?? 0)} · ${eur(b.total_price ?? 0)}` };
+  if (b.status === "unbilled") return { title: "Recharge oubliée non facturée", body: spotTitle };
   return null;
 }
 

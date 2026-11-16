@@ -56,6 +56,7 @@ Pré-autorisation au démarrage, prélèvement du montant réel à la fin. Les p
 2. **Check-in** : la base refuse le démarrage tant que le paiement n'est pas `authorized` (si `app_settings.payments_required` est vrai).
 3. **Check-out** : la fonction prélève `total_price` calculé par la base (au plus le montant bloqué) et libère le reste. Sous 0,50 € (minimum Stripe), rien n'est prélevé.
 4. **Annulation** avant démarrage : le blocage est libéré.
+6. **Recharge oubliée** (pas de scan de fin) : l'écran de recharge rappelle au conducteur de terminer dès la fin du créneau. 1 h après, la recharge passe en `awaiting_meter` (durée facturable arrêtée à la fin du créneau) ; l'hôte déclare les kWh de son compteur (`declare_meter`, plafonné par l'anti-fraude), puis le prélèvement et le reversement suivent le chemin normal. Sans relevé sous 24 h : `unbilled`, rien n'est facturé et le blocage est libéré. Test : `npm run test:e2e:forgotten` (environ 1 h 10).
 5. **Réservations qui n'ont pas lieu** (non honorée, expirée, annulée, refusée) : toutes les 10 min, `pg_cron` + `pg_net` appellent l'action `release_stale` de la fonction, qui libère les montants encore bloqués (migration `20261116120000_release_stale_holds.sql`, puis renseigner `app_settings.payments_function_url`). L'option « Verify JWT » de la fonction doit être désactivée : la fonction authentifie elle-même chaque utilisateur, et `release_stale` ne peut ni prélever ni transférer.
 
 **Reversement aux hôtes (Stripe Connect, comptes Express)** : dans « Mes spots », l'hôte active ses paiements via le formulaire hébergé par Stripe (identité, IBAN). Après chaque prélèvement, sa part (montant prélevé moins la commission `PLATFORM_FEE_PERCENT`, 0 % par défaut) lui est transférée. Tant qu'il n'a pas activé ses paiements, sa part est mise de côté (`payout_status = awaiting_host_account`) et part automatiquement à l'activation. La plateforme encaisse puis transfère (« separate charges and transfers »).
@@ -86,6 +87,5 @@ Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de
 - Reversement automatique aux hôtes (Stripe Connect) et commission éventuelle
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles
-- Clôture des recharges oubliées (`active` sans check-out bien après la fin du créneau)
 - Notifications push (Web Push) pour prévenir aussi quand l'app est fermée (le temps réel ne marche qu'app ouverte)
 - Photo du compteur du véhicule au check-out, en cas de litige

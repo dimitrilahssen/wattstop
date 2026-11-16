@@ -12,7 +12,11 @@ export type BookingStatus =
   /** Demande restée sans réponse au début du créneau (tâche planifiée expire_bookings) */
   | "expired"
   /** Réservation confirmée, créneau terminé sans démarrage de recharge */
-  | "no_show";
+  | "no_show"
+  /** Recharge oubliée (pas de scan de fin) : clôturée 1 h après le créneau, l'hôte doit déclarer les kWh */
+  | "awaiting_meter"
+  /** Recharge oubliée sans relevé de l'hôte sous 24 h : rien n'est facturé */
+  | "unbilled";
 
 export interface Profile {
   id: string;
@@ -64,6 +68,8 @@ export interface Booking {
   price_per_kwh: number;
   checked_in_at: string | null;
   checked_out_at: string | null;
+  /** Clôture automatique d'une recharge oubliée */
+  auto_closed_at?: string | null;
   energy_kwh: number | null;
   total_price: number | null;
   driver_note: string | null;

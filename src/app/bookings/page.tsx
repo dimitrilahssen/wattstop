@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Booking } from "@/types/db";
 import { dateTime, eur, kwh } from "@/lib/format";
 import { BookingActions } from "@/components/booking-actions";
+import { MeterDeclaration } from "@/components/meter-declaration";
 import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus, type PayoutStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
@@ -15,6 +16,8 @@ const STATUS_LABEL: Record<Booking["status"], string> = {
   rejected: "Refusée",
   expired: "Expirée",
   no_show: "Non honorée",
+  awaiting_meter: "Relevé à saisir",
+  unbilled: "Non facturée",
 };
 
 /** Explication affichée sous les statuts posés automatiquement. */
@@ -26,6 +29,14 @@ const STATUS_HINT: Partial<Record<Booking["status"], { host: string; driver: str
   no_show: {
     host: "Le créneau s'est terminé sans que la recharge démarre.",
     driver: "Le créneau s'est terminé sans que la recharge démarre.",
+  },
+  awaiting_meter: {
+    host: "Recharge oubliée : clôturée automatiquement 1 h après la fin du créneau.",
+    driver: "Vous n'avez pas terminé la recharge : elle a été clôturée 1 h après la fin du créneau. L'hôte va déclarer les kWh relevés sur son compteur ; seule la durée du créneau compte.",
+  },
+  unbilled: {
+    host: "Recharge oubliée sans relevé sous 24 h : rien n'a été facturé.",
+    driver: "Recharge oubliée clôturée sans facturation. Le montant bloqué a été libéré.",
   },
 };
 
@@ -39,7 +50,7 @@ export default async function BookingsPage() {
   await supabase.rpc("expire_bookings");
 
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
-  const BASE = "*, spot:spots(title, address), driver:profiles!bookings_driver_id_fkey(full_name)";
+  const BASE = "*, spot:spots(title, address, power_kw), driver:profiles!bookings_driver_id_fkey(full_name)";
   const list = (columns: string) => supabase.from("bookings").select(columns).order("start_at", { ascending: false }).limit(50);
   let { data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents, payout_status, host_amount_cents)`);
   // Bases plus anciennes : sans les colonnes de reversement, puis sans la table payments
@@ -48,7 +59,7 @@ export default async function BookingsPage() {
   if (error) console.error("Réservations :", error.message);
 
   const bookings = (data ?? []) as unknown as (Booking & {
-    spot: { title: string; address: string } | null;
+    spot: { title: string; address: string; power_kw: number } | null;
     driver: { full_name: string | null } | null;
     payment: Payment | null;
   })[];
@@ -96,6 +107,15 @@ export default async function BookingsPage() {
               <p className="text-sm">{kwh(b.energy_kwh ?? 0)} · <strong>{eur(b.total_price)}</strong></p>
             )}
             {b.payment && <PaymentLine payment={b.payment} asHost={asHost} />}
+            {asHost && b.status === "awaiting_meter" && b.checked_in_at && b.checked_out_at && b.auto_closed_at && (
+              <MeterDeclaration
+                bookingId={b.id}
+                // Même plafond que la base : puissance × durée branchée (jusqu'à la fin du créneau) × 1,05
+                maxKwh={Math.floor(((b.spot?.power_kw ?? 0) * (new Date(b.checked_out_at).getTime() - new Date(b.checked_in_at).getTime()) / 3_600_000) * 1.05 * 100) / 100}
+                pricePerKwh={Number(b.price_per_kwh)}
+                deadline={dateTime(new Date(new Date(b.auto_closed_at).getTime() + 24 * 3_600_000).toISOString())}
+              />
+            )}
             <BookingActions booking={b} asHost={asHost} />
           </article>
         );

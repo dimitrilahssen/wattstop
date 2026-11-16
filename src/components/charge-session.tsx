@@ -7,6 +7,7 @@ import type { Booking, ResolvedQr } from "@/types/db";
 import { CONNECTOR_LABELS, dateTime, eur, kwh as fmtKwh } from "@/lib/format";
 import { callPayments, centsToEur, paymentsEnabled, type PaymentResult } from "@/lib/payments";
 import { PaymentStep } from "@/components/payment-step";
+import { markSelfAction } from "@/lib/live-store";
 
 export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: ResolvedQr }) {
   const router = useRouter();
@@ -41,6 +42,7 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
   async function checkOut(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError(null);
+    if (booking) markSelfAction(booking.id, "completed"); // pas de notification pour sa propre fin de recharge
     const { data, error } = await createClient().rpc("check_out", { p_qr_key: qrKey, p_energy_kwh: Number(kwh) });
     setBusy(false);
     if (error) return setError(error.message);
@@ -102,6 +104,12 @@ export function ChargeSession({ qrKey, initial }: { qrKey: string; initial: Reso
       ) : (
         <form onSubmit={checkOut} className="card grid gap-3">
           <p className="text-sm text-muted">En charge depuis {booking.checked_in_at && dateTime(booking.checked_in_at)}</p>
+          {new Date(booking.end_at).getTime() < Date.now() && (
+            <p role="alert" className="rounded-lg bg-soft p-3 text-sm" data-testid="overdue-warning">
+              ⏰ Votre créneau est terminé. Terminez la recharge maintenant : sinon elle sera clôturée automatiquement le{" "}
+              {dateTime(new Date(new Date(booking.end_at).getTime() + 3_600_000).toISOString())} et l&apos;hôte déclarera les kWh relevés sur son compteur.
+            </p>
+          )}
           <label className="grid gap-1 text-sm">Énergie rechargée (kWh, lue sur le tableau de bord du véhicule)
             <input className="input" type="number" step="0.01" min="0" required value={kwh} onChange={(e) => setKwh(e.target.value)} />
           </label>

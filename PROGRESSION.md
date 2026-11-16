@@ -41,11 +41,17 @@ En place et vérifiée sans intervention : une réservation payée mais non hono
 Réglages : migration `20261116120000_release_stale_holds.sql`, `app_settings.payments_function_url`, « Verify JWT » désactivé sur la fonction.
 Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38.
 
+## En cours : recharges oubliées
+
+Code écrit et testé sur un Postgres local, à brancher :
+1. SQL Editor : exécuter `supabase/migrations/20261116180000_forgotten_charges.sql`.
+2. Edge Functions → fonction de paiement → onglet Code : coller la nouvelle version → Deploy.
+3. Lancer `npm run test:e2e:forgotten` (environ 1 h 10).
+
 ## Ensuite (idées)
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
 - Passage en mode réel Stripe (clés live) quand le compte sera vérifié
-- Clôturer les recharges oubliées (pas de check-out)
 - Notifications push quand l'app est fermée (Web Push)
 
 ## Rappels

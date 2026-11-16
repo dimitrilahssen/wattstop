@@ -15,7 +15,7 @@
 //   release   : (conducteur ou hôte) libère le blocage d'une réservation qui n'a pas eu lieu
 // Automatique (pg_cron toutes les 10 min, sans connexion) :
 //   release_stale : libère les montants encore bloqués des réservations non honorées, expirées,
-//                   annulées ou refusées. Ne peut ni prélever ni transférer : sans risque si appelé par d'autres.
+//                   annulées, refusées ou recharges oubliées non facturées. Ne peut ni prélever ni transférer : sans risque si appelé par d'autres.
 // Hôte (Stripe Connect, comptes Express) :
 //   connect_onboard   : crée le compte Stripe de l'hôte si besoin → lien du formulaire Stripe (origin requis)
 //   connect_status    : relit l'état du compte chez Stripe, transfère les sommes en attente
@@ -220,7 +220,7 @@ async function capture(b: Booking, userId: string) {
 }
 
 /** Statuts de réservation pour lesquels aucun argent ne doit rester bloqué. */
-const DEAD_BOOKING_STATUSES = ["no_show", "expired", "cancelled", "rejected"];
+const DEAD_BOOKING_STATUSES = ["no_show", "expired", "cancelled", "rejected", "unbilled"];
 
 /**
  * Libère les blocages caducs. La liste vient de la base (réservations qui n'auront pas lieu),
