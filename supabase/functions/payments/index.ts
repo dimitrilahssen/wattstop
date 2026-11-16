@@ -16,6 +16,12 @@
 // Automatique (pg_cron toutes les 10 min, sans connexion) :
 //   release_stale : libère les montants encore bloqués des réservations non honorées, expirées,
 //                   annulées, refusées ou recharges oubliées non facturées. Ne peut ni prélever ni transférer : sans risque si appelé par d'autres.
+// Notifications push (Web Push) :
+//   push_public_key : clé publique VAPID pour abonner un appareil (générée et stockée en base au 1er appel)
+//   notify_booking  : (déclencheur SQL, sans connexion) notifie le bon destinataire du statut actuel ;
+//                     une seule notification par (réservation, statut), contenu toujours relu en base
+//   push_reminders  : (tâche toutes les 5 min) rappel au conducteur 10 min avant la fin de son créneau
+//   push_test       : (utilisateur connecté) notification de test sur ses propres appareils
 // Hôte (Stripe Connect, comptes Express) :
 //   connect_onboard   : crée le compte Stripe de l'hôte si besoin → lien du formulaire Stripe (origin requis)
 //   connect_status    : relit l'état du compte chez Stripe, transfère les sommes en attente
@@ -27,6 +33,7 @@
 // =============================================================================
 import Stripe from "npm:stripe@17.7.0";
 import { createClient } from "npm:@supabase/supabase-js@2.49.1";
+import webpush from "npm:web-push@3.6.7";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   httpClient: Stripe.createFetchHttpClient(),
@@ -255,6 +262,135 @@ async function releaseStale() {
 }
 
 // ---------------------------------------------------------------------------
+// Notifications push (Web Push)
+// ---------------------------------------------------------------------------
+
+let vapid: { publicKey: string; privateKey: string } | null = null;
+
+/** Clés VAPID du projet : relues en base, ou générées une fois puis stockées (table inaccessible au navigateur). */
+async function getVapid() {
+  if (vapid) return vapid;
+  const read = async () => (await admin.from("push_config").select("public_key, private_key").maybeSingle()).data;
+  let row = await read();
+  if (!row) {
+    const k = webpush.generateVAPIDKeys();
+    const { error } = await admin.from("push_config").insert({ public_key: k.publicKey, private_key: k.privateKey });
+    row = error ? await read() : { public_key: k.publicKey, private_key: k.privateKey }; // si un autre appel a gagné la course
+    if (!row) throw new HttpError(500, "Clés de notification indisponibles");
+  }
+  vapid = { publicKey: row.public_key, privateKey: row.private_key };
+  webpush.setVapidDetails(Deno.env.get("PUSH_CONTACT") ?? "mailto:contact@wattstop.app", vapid.publicKey, vapid.privateKey);
+  return vapid;
+}
+
+type PushMessage = { title: string; body: string; url?: string; tag?: string };
+
+/** Envoie à tous les appareils d'un utilisateur ; supprime les abonnements expirés. */
+async function pushTo(userId: string, msg: PushMessage) {
+  await getVapid();
+  const { data: subs } = await admin.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", userId);
+  let sent = 0;
+  for (const s of subs ?? []) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+        JSON.stringify({ url: "/bookings", ...msg }),
+        { TTL: 6 * 3600, urgency: "high" },
+      );
+      sent++;
+    } catch (e) {
+      const code = (e as { statusCode?: number }).statusCode;
+      if (code === 404 || code === 410) await admin.from("push_subscriptions").delete().eq("id", s.id);
+      else console.error("Notification non envoyée", code, (e as Error).message);
+    }
+  }
+  return sent;
+}
+
+/** Réserve l'envoi d'un événement : vrai la première fois seulement (anti-doublon). */
+async function claim(bookingId: string, event: string) {
+  const { error } = await admin.from("push_log").insert({ booking_id: bookingId, event });
+  return !error;
+}
+
+const euro = (v: number) => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(v);
+const kwhFr = (v: number) => `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(v)} kWh`;
+const hourFr = (iso: string) => new Intl.DateTimeFormat("fr-FR", { timeStyle: "short", timeZone: "Europe/Paris" }).format(new Date(iso));
+
+/** Notifie le(s) bon(s) destinataire(s) du statut ACTUEL de la réservation (relu en base). */
+async function notifyBooking(bookingId: string) {
+  const { data: b } = await admin
+    .from("bookings")
+    .select("id, status, driver_id, host_id, cancelled_by, auto_closed_at, energy_kwh, total_price, spot:spots(title)")
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (!b) return { sent: 0 };
+  const spot = (b.spot as { title?: string } | null)?.title ?? "Spot";
+  const out: { to: string; msg: PushMessage }[] = [];
+  const host = (title: string, body = spot) => out.push({ to: b.host_id, msg: { title, body } });
+  const driver = (title: string, body = spot) => out.push({ to: b.driver_id, msg: { title, body } });
+  switch (b.status) {
+    case "pending": host("🔔 Nouvelle demande de réservation"); break;
+    case "confirmed": driver("✅ Réservation acceptée"); break;
+    case "rejected": driver("Réservation refusée par l'hôte"); break;
+    case "cancelled":
+      if (b.cancelled_by === b.driver_id) host("Réservation annulée par le conducteur");
+      else if (b.cancelled_by === b.host_id) driver("Réservation annulée par l'hôte");
+      break;
+    case "active": host("⚡ Recharge démarrée"); break;
+    case "completed": {
+      const detail = `${spot} · ${kwhFr(Number(b.energy_kwh ?? 0))} · ${euro(Number(b.total_price ?? 0))}`;
+      host("✅ Recharge terminée", detail);
+      if (b.auto_closed_at) driver("✅ Recharge facturée", detail); // relevé déclaré par l'hôte
+      break;
+    }
+    case "expired":
+      driver("⏰ Demande expirée : l'hôte n'a pas répondu à temps");
+      host("⏰ Demande expirée sans réponse");
+      break;
+    case "no_show":
+      host("Le conducteur ne s'est pas présenté");
+      driver("Réservation non honorée : créneau terminé sans recharge");
+      break;
+    case "awaiting_meter":
+      host("⏰ Recharge oubliée : déclarez les kWh relevés");
+      driver("⏰ Recharge clôturée automatiquement", `${spot} · vous aviez oublié de la terminer`);
+      break;
+    case "unbilled":
+      host("Recharge oubliée clôturée sans facturation");
+      driver("Recharge oubliée non facturée");
+      break;
+  }
+  if (!out.length) return { status: b.status, claimed: false, sent: 0 };
+  // claimed = false : déjà notifié (par le déclencheur, ou un appel précédent)
+  if (!(await claim(b.id, b.status))) return { status: b.status, claimed: false, sent: 0 };
+  let sent = 0;
+  for (const o of out) sent += await pushTo(o.to, { ...o.msg, tag: `booking-${b.id}` });
+  return { status: b.status, claimed: true, sent };
+}
+
+/** Rappel au conducteur 10 minutes avant la fin d'une recharge en cours. */
+async function pushReminders() {
+  const now = Date.now();
+  const { data } = await admin
+    .from("bookings")
+    .select("id, driver_id, end_at, spot:spots(title)")
+    .eq("status", "active")
+    .gt("end_at", new Date(now).toISOString())
+    .lte("end_at", new Date(now + 10 * 60_000).toISOString());
+  let sent = 0;
+  for (const b of data ?? []) {
+    if (!(await claim(b.id, "reminder_end"))) continue;
+    sent += await pushTo(b.driver_id, {
+      title: `⏰ Votre créneau se termine à ${hourFr(b.end_at)}`,
+      body: `${(b.spot as { title?: string } | null)?.title ?? "Spot"} · scannez le QR pour terminer la recharge`,
+      tag: `booking-${b.id}`,
+    });
+  }
+  return { sent };
+}
+
+// ---------------------------------------------------------------------------
 // Reversement à l'hôte (Stripe Connect)
 // ---------------------------------------------------------------------------
 
@@ -419,19 +555,29 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Méthode non autorisée" }, 405);
   try {
-    if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant dans les secrets de la fonction");
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const { action, booking_id } = body;
-    // Seule action sans connexion (tâche planifiée) : elle ne fait que libérer des blocages caducs
+    // Actions sans connexion (tâches planifiées, déclencheur SQL, clé publique) : sans effet nuisible si répétées
     if (action === "release_stale") return json(await releaseStale());
+    if (action === "push_public_key") return json({ public_key: (await getVapid()).publicKey });
+    if (action === "push_reminders") return json(await pushReminders());
+    if (action === "notify_booking") {
+      if (typeof booking_id !== "string" || !/^[0-9a-f-]{36}$/i.test(booking_id)) throw new HttpError(400, "booking_id invalide");
+      return json(await notifyBooking(booking_id));
+    }
 
     const user = await currentUser(req);
+    if (action === "push_test") {
+      const sent = await pushTo(user.id, { title: "🔔 Notifications WattStop activées", body: "Vous serez prévenu de vos réservations, même app fermée." });
+      return json({ sent });
+    }
 
     const hostActions = { connect_onboard: connectOnboard, connect_status: connectStatus, connect_dashboard: connectDashboard } as const;
     const hostHandler = hostActions[action as keyof typeof hostActions];
     if (hostHandler) return json(await hostHandler(user, body));
 
     if (typeof booking_id !== "string" || !/^[0-9a-f-]{36}$/i.test(booking_id)) throw new HttpError(400, "booking_id invalide");
+    if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant dans les secrets de la fonction");
     const booking = await loadBooking(booking_id);
     const handlers = { authorize, sync, capture, release } as const;
     const handler = handlers[action as keyof typeof handlers];

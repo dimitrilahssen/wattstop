@@ -65,6 +65,12 @@ Sécurité : la clé secrète Stripe n'existe que dans les secrets de l'Edge Fun
 
 Mise en place : migration `20261114000000_payments.sql`, déploiement de la fonction `payments`, secret `STRIPE_SECRET_KEY`, puis `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` dans `.env.local` (et `NEXT_PUBLIC_PAYMENTS_FUNCTION` si l'adresse de la fonction n'est pas `payments`), et enfin `update public.app_settings set payments_required = true;`.
 
+## Notifications push
+En plus des notifications en direct (app ouverte), WattStop envoie des notifications Web Push, même app fermée : nouvelle demande, acceptation, refus, annulation, démarrage, fin et montant, demande expirée, non honorée, recharge oubliée, et un rappel au conducteur 10 min avant la fin de son créneau.
+- Activation par appareil : bloc « Notifications » en haut de Réservations (une notification de test part aussitôt). Sur iPhone, l'app doit d'abord être ajoutée à l'écran d'accueil.
+- Chaque changement de statut d'une réservation déclenche un appel `pg_net` vers la fonction (`notify_booking`), qui relit la réservation en base et notifie le bon destinataire, une seule fois par statut (`push_log`). Les clés VAPID sont générées par la fonction et stockées dans `push_config`, illisible côté navigateur.
+- Migration `20261117000000_push_notifications.sql`. Test : `npm run test:e2e:push`.
+
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
 
@@ -87,5 +93,4 @@ Les données créées portent le préfixe `[TEST]`. En fin de test, les spots de
 - Reversement automatique aux hôtes (Stripe Connect) et commission éventuelle
 - Splash screens iOS
 - Clustering des marqueurs au-delà de ~100 spots visibles
-- Notifications push (Web Push) pour prévenir aussi quand l'app est fermée (le temps réel ne marche qu'app ouverte)
 - Photo du compteur du véhicule au check-out, en cas de litige

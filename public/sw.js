@@ -1,11 +1,13 @@
-/* WattStop service worker — offline shell + cache des assets statiques. */
-const VERSION = "wattstop-v2";
+/* WattStop service worker — page hors-ligne, cache des assets statiques, notifications push. */
+const VERSION = "wattstop-v3";
+// En local (npm run dev), pas de cache : les fichiers de développement changent sans changer de nom
+const CACHE_ENABLED = !["localhost", "127.0.0.1"].includes(self.location.hostname);
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline";
 const PRECACHE = [OFFLINE_URL, "/icons/icon.svg", "/icons/icon-192.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(STATIC_CACHE).then((c) => c.addAll(PRECACHE)));
+  if (CACHE_ENABLED) event.waitUntil(caches.open(STATIC_CACHE).then((c) => c.addAll(PRECACHE)));
   self.skipWaiting();
 });
 
@@ -20,7 +22,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.method !== "GET") return;
+  if (!CACHE_ENABLED || request.method !== "GET") return;
   const url = new URL(request.url);
 
   // Jamais de cache pour Supabase / API / auth : données sensibles et temps réel
@@ -48,4 +50,37 @@ self.addEventListener("fetch", (event) => {
       )
     );
   }
+});
+
+// ---------- Notifications push ----------
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "WattStop", body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "WattStop", {
+      body: data.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag,
+      renotify: Boolean(data.tag),
+      data: { url: data.url || "/bookings" },
+    })
+  );
+});
+
+// Clic : ramène l'onglet WattStop déjà ouvert sur la bonne page, sinon en ouvre un
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/bookings", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const win = wins.find((w) => w.url.startsWith(self.location.origin));
+      if (win) return win.focus().then(() => win.navigate(url));
+      return self.clients.openWindow(url);
+    })
+  );
 });

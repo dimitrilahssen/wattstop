@@ -46,11 +46,17 @@ Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38.
 En place et vérifiée en réel (`npm run test:e2e:forgotten`, 10/10) : recharge démarrée puis oubliée, clôturée automatiquement 62 min après la fin du créneau (« Relevé à saisir », durée facturable arrêtée à la fin du créneau), relevé de l'hôte plafonné par l'anti-fraude, 0,80 € prélevés puis reversés à l'hôte. Sans relevé sous 24 h : « Non facturée » et blocage libéré.
 Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38, recharge oubliée 10/10.
 
+## En cours : notifications push
+
+Code écrit et testé sur un Postgres local, à brancher :
+1. SQL Editor : exécuter `supabase/migrations/20261117000000_push_notifications.sql`.
+2. Edge Functions → fonction de paiement → onglet Code : coller la nouvelle version → Deploy.
+3. `npm run test:e2e:push`, puis activer les notifications dans Réservations (navigateur de bureau, en local).
+
 ## Ensuite (idées)
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
 - Passage en mode réel Stripe (clés live) quand le compte sera vérifié
-- Notifications push quand l'app est fermée (Web Push)
 
 ## Rappels
 

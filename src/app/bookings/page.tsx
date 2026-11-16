@@ -3,6 +3,7 @@ import type { Booking } from "@/types/db";
 import { dateTime, eur, kwh } from "@/lib/format";
 import { BookingActions } from "@/components/booking-actions";
 import { MeterDeclaration } from "@/components/meter-declaration";
+import { PushToggle } from "@/components/push-toggle";
 import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus, type PayoutStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
@@ -82,6 +83,7 @@ export default async function BookingsPage() {
   return (
     <section className="grid gap-4">
       <h1 className="text-2xl font-bold">Réservations</h1>
+      <PushToggle />
       {bookings.length === 0 && <p className="text-muted">Aucune réservation pour l&apos;instant.</p>}
       {bookings.map((b) => {
         const asHost = b.host_id === user?.id;
