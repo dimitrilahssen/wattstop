@@ -46,12 +46,11 @@ Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38.
 En place et vérifiée en réel (`npm run test:e2e:forgotten`, 10/10) : recharge démarrée puis oubliée, clôturée automatiquement 62 min après la fin du créneau (« Relevé à saisir », durée facturable arrêtée à la fin du créneau), relevé de l'hôte plafonné par l'anti-fraude, 0,80 € prélevés puis reversés à l'hôte. Sans relevé sous 24 h : « Non facturée » et blocage libéré.
 Derniers résultats : paiement 33/33, API 41/41, navigateur 38/38, recharge oubliée 10/10.
 
-## En cours : notifications push
+## Notifications push (Web Push)
 
-Code écrit et testé sur un Postgres local, à brancher :
-1. SQL Editor : exécuter `supabase/migrations/20261117000000_push_notifications.sql`.
-2. Edge Functions → fonction de paiement → onglet Code : coller la nouvelle version → Deploy.
-3. `npm run test:e2e:push`, puis activer les notifications dans Réservations (navigateur de bureau, en local).
+Branchées et testées côté serveur (`npm run test:e2e:push`, 14/14) : clés VAPID générées et protégées, chaque changement de statut notifié une seule fois par la base (pg_net → fonction), abonnements expirés nettoyés, rappel de fin de créneau.
+Reste à vérifier à la main la réception réelle : app en local sur PC (Chrome, Edge ou Firefox), Réservations → « Activer les notifications » → une notification de test doit apparaître. Sur téléphone : nécessite l'app en ligne (https) ; sur iPhone, l'ajouter d'abord à l'écran d'accueil.
+Derniers résultats : push 14/14, paiement 33/33, API 41/41, navigateur 38/38.
 
 ## Ensuite (idées)
 
