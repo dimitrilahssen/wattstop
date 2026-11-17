@@ -58,7 +58,7 @@ export default async function BookingsPage() {
   await supabase.rpc("expire_bookings");
 
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
-  const BASE = "*, spot:spots(title, address, power_kw), driver:profiles!bookings_driver_id_fkey(full_name)";
+  const BASE = "*, spot:spots(title, address, power_kw), driver:profiles!bookings_driver_id_fkey(full_name, vehicle_model)";
   // Les 50 réservations à l'activité la plus récente (une annulée il y a longtemps ne masque pas une recharge d'hier)
   const list = (columns: string) => supabase.from("bookings").select(columns).order("updated_at", { ascending: false }).limit(50);
   let { data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents, payout_status, host_amount_cents)`);
@@ -69,7 +69,7 @@ export default async function BookingsPage() {
 
   const bookings = (data ?? []) as unknown as (Booking & {
     spot: { title: string; address: string; power_kw: number } | null;
-    driver: { full_name: string | null } | null;
+    driver: { full_name: string | null; vehicle_model?: string | null } | null;
     payment: Payment | null;
   })[];
   // En haut : ce qui demande une action (en attente, acceptée, en charge, relevé à saisir), par date de début ;
@@ -146,7 +146,8 @@ export default async function BookingsPage() {
               <div>
                 <p className="font-semibold">{b.spot?.title}</p>
                 <p className="text-xs text-subtle">
-                  {asHost ? `Conducteur : ${b.driver?.full_name ?? "sans nom"}` : "Vous êtes le conducteur"}
+                  {asHost ? `Conducteur : ${b.driver?.full_name ?? "compte supprimé"}` : "Vous êtes le conducteur"}
+                  {asHost && b.driver?.vehicle_model ? ` · 🚗 ${b.driver.vehicle_model}` : ""}
                   {asHost && (driverLabel ? <span className="text-star"> · {driverLabel}</span> : <span> · nouveau conducteur</span>)}
                 </p>
               </div>

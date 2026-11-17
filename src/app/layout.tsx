@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { BottomNav } from "@/components/bottom-nav";
 import { LiveBookings } from "@/components/live-bookings";
+import { ProfileGate } from "@/components/profile-gate";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import "./globals.css";
 
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="flex-1 px-4 pt-6 pb-24">{children}</main>
           <BottomNav />
           <LiveBookings />
+          <ProfileGate />
         </div>
         <ServiceWorkerRegister />
       </body>

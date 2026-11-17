@@ -12,6 +12,7 @@ const TABS: Tab[] = [
   { href: "/scan", label: "Scanner", icon: "📷", match: ["/scan", "/s/"] },
   { href: "/bookings", label: "Résas", icon: "📅", match: ["/bookings"] },
   { href: "/host", label: "Mes spots", icon: "🏠", match: ["/host"] },
+  { href: "/account", label: "Compte", icon: "👤", match: ["/account"] },
 ];
 
 function isActive(pathname: string, prefixes: string[]) {
@@ -28,7 +29,7 @@ export function BottomNav() {
       aria-label="Navigation principale"
       className="fixed inset-x-0 bottom-0 border-t border-line bg-surface/90 backdrop-blur pb-[env(safe-area-inset-bottom)]"
     >
-      <div className="mx-auto grid max-w-lg grid-cols-4 text-center text-xs sm:text-sm">
+      <div className="mx-auto grid max-w-lg grid-cols-5 text-center text-xs sm:text-sm">
         {TABS.map((t) => {
           const active = isActive(pathname, t.match);
           return (

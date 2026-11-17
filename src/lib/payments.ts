@@ -54,3 +54,13 @@ export async function callConnect<T>(action: "connect_onboard" | "connect_status
   }
   return data as T;
 }
+
+/** Appel générique d'une action de la fonction (compte, etc.), avec la session de l'utilisateur. */
+export async function callFunction<T>(action: string, extra: Record<string, unknown> = {}): Promise<T> {
+  const { data, error } = await createClient().functions.invoke(PAYMENTS_FUNCTION, { body: { action, ...extra } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? error.message);
+  }
+  return data as T;
+}

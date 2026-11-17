@@ -31,6 +31,10 @@
 // Frais d'annulation tardive / d'absence (décidés par la base, table booking_fees) :
 //   charge_fees : (déclencheur SQL + tâche toutes les 10 min, sans connexion) prélève les frais en attente
 //                 sur la carte enregistrée, puis reverse la part de l'hôte. Ne prélève que ce que la base a décidé.
+// Compte :
+//   account_delete : (utilisateur connecté) suppression du compte (RGPD) : données personnelles effacées,
+//                    carte retirée chez Stripe, spots désactivés, connexion bloquée. L'historique des
+//                    réservations et paiements reste, anonyme (comptabilité, historique de l'autre partie).
 // Hôte (Stripe Connect, comptes Express) :
 //   connect_onboard   : crée le compte Stripe de l'hôte si besoin → lien du formulaire Stripe (origin requis)
 //   connect_status    : relit l'état du compte chez Stripe, transfère les sommes en attente
@@ -801,6 +805,54 @@ async function chargeFees(bookingId?: string) {
   return { charged, failed };
 }
 
+// ---------------------------------------------------------------------------
+// Suppression du compte
+// ---------------------------------------------------------------------------
+
+const OPEN_BOOKING_STATUSES = ["pending", "confirmed", "active", "awaiting_meter"];
+
+async function accountDelete(user: { id: string }) {
+  // 1. Rien ne doit être en cours : réservations (comme conducteur ou hôte) et frais à régler
+  const { count } = await admin
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .or(`driver_id.eq.${user.id},host_id.eq.${user.id}`)
+    .in("status", OPEN_BOOKING_STATUSES);
+  if (count) throw new HttpError(409, "Annulez ou terminez d'abord vos réservations en cours (y compris les demandes reçues sur vos spots)");
+  const { data: fees } = await admin
+    .from("booking_fees")
+    .select("booking_id, booking:bookings!inner(driver_id)")
+    .eq("booking.driver_id", user.id)
+    .eq("status", "pending");
+  if (fees?.length) throw new HttpError(409, "Des frais sont en cours de règlement, réessayez dans quelques minutes");
+
+  // 2. Carte : le client Stripe est supprimé (ses moyens de paiement avec lui)
+  const card = await loadCard(user.id);
+  if (card && Deno.env.get("STRIPE_SECRET_KEY")) {
+    await stripe.customers.del(card.stripe_customer_id).catch((e) => console.error("Client Stripe non supprimé", e));
+  }
+  await admin.from("driver_cards").delete().eq("driver_id", user.id);
+
+  // 3. Spots retirés de la carte, appareils désabonnés, profil anonymisé
+  await admin.from("spots").update({ is_active: false }).eq("host_id", user.id);
+  await admin.from("push_subscriptions").delete().eq("user_id", user.id);
+  const { error } = await admin
+    .from("profiles")
+    .update({ full_name: null, avatar_url: null, vehicle_model: null, deleted_at: new Date().toISOString() })
+    .eq("id", user.id);
+  if (error) throw new HttpError(500, error.message);
+
+  // 4. Identité de connexion : adresse e-mail effacée, connexion bloquée
+  const { error: authError } = await admin.auth.admin.updateUserById(user.id, {
+    email: `supprime-${user.id}@wattstop.invalid`,
+    email_confirm: true,
+    user_metadata: {},
+    ban_duration: "876000h",
+  });
+  if (authError) throw new HttpError(500, authError.message);
+  return { deleted: true };
+}
+
 async function release(b: Booking, userId: string) {
   if (b.driver_id !== userId && b.host_id !== userId) throw new HttpError(403, "Accès refusé");
   if (["active", "completed"].includes(b.status)) throw new HttpError(409, "Recharge en cours ou terminée");
@@ -845,6 +897,8 @@ Deno.serve(async (req) => {
       const sent = await pushTo(user.id, { title: "🔔 Notifications WattStop activées", body: "Vous serez prévenu de vos réservations, même app fermée." });
       return json({ sent });
     }
+
+    if (action === "account_delete") return json(await accountDelete(user));
 
     const cardActions = { card_setup: cardSetup, card_sync: cardSync, card_remove: cardRemove } as const;
     const cardHandler = cardActions[action as keyof typeof cardActions];

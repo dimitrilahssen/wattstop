@@ -1,8 +1,14 @@
 import Link from "next/link";
 
-export default function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ compte?: string }> }) {
+  const { compte } = await searchParams;
   return (
     <section className="flex flex-col gap-8 pt-10">
+      {compte === "supprime" && (
+        <p className="card text-sm" role="status" data-testid="account-deleted">
+          Votre compte a été supprimé. Merci d&apos;avoir utilisé WattStop.
+        </p>
+      )}
       <div>
         <p className="text-accent font-semibold">⚡ WattStop</p>
         <h1 className="mt-2 text-4xl font-bold leading-tight">

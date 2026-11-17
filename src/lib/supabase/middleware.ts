@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Routes nécessitant une session. Le scan QR (/s/...) redirige vers /login puis revient. */
-const PROTECTED_PREFIXES = ["/host", "/bookings", "/s/"];
+const PROTECTED_PREFIXES = ["/host", "/bookings", "/s/", "/account"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
