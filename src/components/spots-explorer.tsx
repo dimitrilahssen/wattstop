@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { NearbySpot } from "@/types/db";
 import { CONNECTOR_LABELS, distance, eur } from "@/lib/format";
+import { ratingLabel, type SpotRating } from "@/lib/ratings";
 import { FALLBACK_CENTER, type LatLng } from "@/lib/geo";
 
 // MapLibre manipule window/WebGL : chargé uniquement côté client, et seulement en vue carte.
@@ -25,6 +26,7 @@ export function SpotsExplorer() {
   // Spots où l'on peut démarrer une recharge d'au moins 1 h maintenant (null : inconnu)
   const [openNow, setOpenNow] = useState<Set<string> | null>(null);
   const [onlyOpen, setOnlyOpen] = useState(false);
+  const [ratings, setRatings] = useState<Map<string, SpotRating>>(new Map());
 
   const search = useCallback(async (c: LatLng, radiusM: number) => {
     setLoading(true);
@@ -40,9 +42,14 @@ export function SpotsExplorer() {
       return setError(error.message);
     }
     const found = (data ?? []) as NearbySpot[];
-    const open = found.length
-      ? await createClient().rpc("spots_open_now", { p_ids: found.map((s) => s.id) })
-      : { data: [], error: null };
+    const ids = found.map((s) => s.id);
+    const [open, rated] = found.length
+      ? await Promise.all([
+          createClient().rpc("spots_open_now", { p_ids: ids }),
+          createClient().rpc("spot_ratings", { p_ids: ids }),
+        ])
+      : [{ data: [], error: null }, { data: [], error: null }];
+    setRatings(new Map(((rated.data ?? []) as SpotRating[]).map((r) => [r.spot_id, r])));
     setOpenNow(open.error ? null : new Set((open.data ?? []) as string[]));
     setSpots(found);
     setLoading(false);
@@ -102,13 +109,13 @@ export function SpotsExplorer() {
       ) : view === "map" ? (
         <SpotsMap center={center} spots={shown} onSearchArea={search} />
       ) : (
-        <SpotList spots={shown} loading={loading} openNow={openNow} />
+        <SpotList spots={shown} loading={loading} openNow={openNow} ratings={ratings} />
       )}
     </div>
   );
 }
 
-function SpotList({ spots, loading, openNow }: { spots: NearbySpot[]; loading: boolean; openNow: Set<string> | null }) {
+function SpotList({ spots, loading, openNow, ratings }: { spots: NearbySpot[]; loading: boolean; openNow: Set<string> | null; ratings: Map<string, SpotRating> }) {
   if (!loading && spots.length === 0) return <p className="text-muted">Aucun spot disponible dans cette zone.</p>;
   return (
     <ul className="grid gap-3">
@@ -118,6 +125,9 @@ function SpotList({ spots, loading, openNow }: { spots: NearbySpot[]; loading: b
             <div>
               <p className="font-semibold">{s.title}</p>
               <p className="text-sm text-muted">{CONNECTOR_LABELS[s.connector_type]} · {s.power_kw} kW</p>
+              {ratings.get(s.id) && (
+                <p className="text-xs text-star">{ratingLabel(ratings.get(s.id)!.avg_rating, ratings.get(s.id)!.review_count)}</p>
+              )}
               {openNow && (
                 <p className={`text-xs ${openNow.has(s.id) ? "text-accent" : "text-subtle"}`}>
                   {openNow.has(s.id) ? "● Libre maintenant" : "Pas disponible maintenant"}

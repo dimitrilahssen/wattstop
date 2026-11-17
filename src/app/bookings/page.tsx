@@ -4,6 +4,9 @@ import { dateTime, eur, kwh } from "@/lib/format";
 import { BookingActions } from "@/components/booking-actions";
 import { MeterDeclaration } from "@/components/meter-declaration";
 import { PushToggle } from "@/components/push-toggle";
+import { ReviewForm } from "@/components/review-form";
+import { Stars } from "@/components/stars";
+import { ratingLabel, REVIEW_DAYS, type ProfileRating, type Review } from "@/lib/ratings";
 import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus, type PayoutStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
@@ -80,6 +83,18 @@ export default async function BookingsPage() {
     }
   }
 
+  // Avis : les miens et ceux reçus déjà publiés (la RLS cache les autres), notes des conducteurs pour l'hôte.
+  // Bases sans la migration des avis : listes vides, la page s'affiche normalement.
+  const ids = bookings.map((b) => b.id);
+  const driverIds = [...new Set(bookings.filter((b) => b.host_id === user?.id).map((b) => b.driver_id))];
+  const [{ data: reviewRows }, { data: ratingRows }] = await Promise.all([
+    ids.length ? supabase.from("reviews").select("*").in("booking_id", ids) : Promise.resolve({ data: [] }),
+    driverIds.length ? supabase.rpc("profile_ratings", { p_ids: driverIds }) : Promise.resolve({ data: [] }),
+  ]);
+  const reviews = (reviewRows ?? []) as Review[];
+  const driverRatings = new Map(((ratingRows ?? []) as ProfileRating[]).map((r) => [r.user_id, r]));
+  const reviewsEnabled = reviewRows !== null;
+
   return (
     <section className="grid gap-4">
       <h1 className="text-2xl font-bold">Réservations</h1>
@@ -87,6 +102,12 @@ export default async function BookingsPage() {
       {bookings.length === 0 && <p className="text-muted">Aucune réservation pour l&apos;instant.</p>}
       {bookings.map((b) => {
         const asHost = b.host_id === user?.id;
+        const mine = reviews.find((r) => r.booking_id === b.id && r.author_id === user?.id);
+        const received = reviews.find((r) => r.booking_id === b.id && r.author_id !== user?.id);
+        const reviewDeadline = new Date(new Date(b.checked_out_at ?? b.end_at).getTime() + REVIEW_DAYS * 86_400_000);
+        const canReview = reviewsEnabled && b.status === "completed" && !mine && reviewDeadline.getTime() > Date.now();
+        const driverRating = asHost ? driverRatings.get(b.driver_id) : undefined;
+        const driverLabel = ratingLabel(driverRating?.driver_avg, driverRating?.driver_count);
         return (
           <article key={b.id} className="card grid gap-2">
             <div className="flex items-start justify-between gap-2">
@@ -94,6 +115,7 @@ export default async function BookingsPage() {
                 <p className="font-semibold">{b.spot?.title}</p>
                 <p className="text-xs text-subtle">
                   {asHost ? `Conducteur : ${b.driver?.full_name ?? "sans nom"}` : "Vous êtes le conducteur"}
+                  {asHost && (driverLabel ? <span className="text-star"> · {driverLabel}</span> : <span> · nouveau conducteur</span>)}
                 </p>
               </div>
               <span className="shrink-0 whitespace-nowrap rounded-full bg-soft px-2 py-0.5 text-xs">{STATUS_LABEL[b.status]}</span>
@@ -117,6 +139,25 @@ export default async function BookingsPage() {
                 pricePerKwh={Number(b.price_per_kwh)}
                 deadline={dateTime(new Date(new Date(b.auto_closed_at).getTime() + 24 * 3_600_000).toISOString())}
               />
+            )}
+            {mine && (
+              <div className="grid gap-1 text-sm" data-testid="my-review">
+                <p>Votre note : <Stars value={mine.rating} />{mine.comment ? <span className="text-muted"> « {mine.comment} »</span> : null}</p>
+                {!received && (
+                  <p className="text-xs text-subtle">
+                    Visible quand {asHost ? "le conducteur" : "l'hôte"} aura noté à son tour, ou le {dateTime(reviewDeadline.toISOString())} au plus tard.
+                  </p>
+                )}
+              </div>
+            )}
+            {received && (
+              <p className="text-sm" data-testid="received-review">
+                Avis {asHost ? "du conducteur" : "de l'hôte"} : <Stars value={received.rating} />
+                {received.comment ? <span className="text-muted"> « {received.comment} »</span> : null}
+              </p>
+            )}
+            {canReview && (
+              <ReviewForm bookingId={b.id} targetLabel={asHost ? "le conducteur" : "l'hôte et son spot"} deadline={dateTime(reviewDeadline.toISOString())} />
             )}
             <BookingActions booking={b} asHost={asHost} />
           </article>

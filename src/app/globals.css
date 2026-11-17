@@ -12,6 +12,7 @@
   --color-accent: #15803d;     /* vert WattStop (contraste AA sur blanc) */
   --color-accent-hover: #166534;
   --color-danger: #b91c1c;
+  --color-star: #b45309;       /* étoiles des avis (contraste AA sur blanc) */
   --color-brand-500: #22c55e;  /* cadre du viseur caméra */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }

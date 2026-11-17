@@ -16,7 +16,8 @@
     "test:e2e:payments": "node tests/e2e/payments-flow.mjs",
     "test:e2e:forgotten": "node tests/e2e/forgotten-flow.mjs",
     "test:e2e:push": "node tests/e2e/push-flow.mjs",
-    "test:e2e:availability": "node tests/e2e/availability-flow.mjs"
+    "test:e2e:availability": "node tests/e2e/availability-flow.mjs",
+    "test:e2e:reviews": "node tests/e2e/reviews-flow.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^3.11.0",

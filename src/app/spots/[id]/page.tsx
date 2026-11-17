@@ -5,6 +5,8 @@ import { CONNECTOR_LABELS, eur } from "@/lib/format";
 import { BookingForm } from "@/components/booking-form";
 import { SpotAvailabilityCard } from "@/components/spot-availability-card";
 import type { BusySlot, SpotClosure, SpotHour } from "@/lib/availability";
+import { SpotReviews } from "@/components/spot-reviews";
+import { ratingLabel, type ProfileRating, type SpotRating, type SpotReview } from "@/lib/ratings";
 
 export default async function SpotPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,12 +22,19 @@ export default async function SpotPage({ params }: { params: Promise<{ id: strin
     { data: hours },
     { data: closures },
     { data: busy },
+    { data: spotRating },
+    { data: hostRating },
+    { data: reviews },
   ] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("spot_hours").select("weekday, opens, closes").eq("spot_id", id),
     supabase.from("spot_closures").select("id, starts_on, ends_on, reason").eq("spot_id", id).gte("ends_on", today).order("starts_on"),
     supabase.rpc("spot_busy_slots", { p_spot_id: id }),
+    supabase.rpc("spot_ratings", { p_ids: [id] }),
+    supabase.rpc("profile_ratings", { p_ids: [spot.host_id] }),
+    supabase.rpc("spot_reviews", { p_spot_id: id, p_limit: 10 }),
   ]);
+  const hr = ((hostRating ?? []) as ProfileRating[])[0];
   // Tables absentes (migration pas encore appliquée) : le spot reste réservable à toute heure
   const h = (hours ?? []) as SpotHour[];
   const c = (closures ?? []) as SpotClosure[];
@@ -44,6 +53,13 @@ export default async function SpotPage({ params }: { params: Promise<{ id: strin
       </div>
       {spot.description && <p className="text-muted">{spot.description}</p>}
       <SpotAvailabilityCard hours={h} closures={c} busy={b} />
+      {reviews !== null && (
+        <SpotReviews
+          rating={((spotRating ?? []) as SpotRating[])[0] ?? null}
+          hostLabel={ratingLabel(hr?.host_avg, hr?.host_count)}
+          reviews={(reviews ?? []) as SpotReview[]}
+        />
+      )}
       {user && user.id !== spot.host_id ? (
         <BookingForm spotId={spot.id} driverId={user.id} hours={h} closures={c} busy={b} />
       ) : !user ? (
