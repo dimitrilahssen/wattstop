@@ -58,9 +58,14 @@ En place et testés sur la vraie base (`npm run test:e2e:availability`, 37/37) :
 Migration `20261118000000_spot_availability.sql` appliquée.
 Derniers résultats : horaires 37/37, API 41/41, navigateur 38/38, paiement 33/33, push 14/14.
 
+## Avis et notes
+
+En place et testés sur la vraie base (`npm run test:e2e:reviews`, 28/28) : notes croisées conducteur ↔ hôte après chaque recharge terminée (1 à 5 étoiles + commentaire, sous 14 jours), publication en double aveugle, moyenne et avis sur la fiche du spot, note dans la liste des spots, note du conducteur sur les demandes reçues par l'hôte.
+Migration `20261119000000_reviews.sql` appliquée.
+Derniers résultats : avis 28/28, horaires 37/37, API 41/41, navigateur 38/38, paiement 33/33, push 14/14.
+
 ## Ensuite (idées)
 
-- Avis et notes après chaque recharge (conducteur ↔ hôte)
 - Règle d'annulation (gratuite jusqu'à 2 h avant, puis petit montant reversé à l'hôte)
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)

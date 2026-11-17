@@ -80,6 +80,13 @@ Chaque hôte règle, depuis « Mes spots » (bloc « 🕒 Horaires et fermetures
 - Carte : filtre « Disponible maintenant » (`spots_open_now` : au moins 1 h de recharge possible tout de suite).
 - Heures exprimées à l'heure du spot (`spots.timezone`, Europe/Paris). Migration `20261118000000_spot_availability.sql`. Test : `npm run test:e2e:availability`.
 
+## Avis et notes
+Après une recharge terminée, le conducteur note l'hôte et l'hôte note le conducteur : 1 à 5 étoiles et un commentaire facultatif, une fois chacun, sous 14 jours (bloc « ⭐ Notez… » dans Réservations).
+- Double aveugle : un avis n'est visible que de son auteur tant que l'autre partie n'a pas noté, ou jusqu'à la fin des 14 jours.
+- Écriture uniquement via `submit_review` (auteur, cible, rôle et spot posés par la base).
+- Affichage : moyenne et derniers avis sur la fiche du spot (`spot_ratings`, `spot_reviews`, prénom de l'auteur seulement), note sous chaque spot de la liste, note du conducteur sur les demandes reçues par l'hôte (`profile_ratings`).
+- Migration `20261119000000_reviews.sql`. Test : `npm run test:e2e:reviews`.
+
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
 
@@ -89,6 +96,7 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 | `npm run test:e2e:ui` | Le même parcours dans un vrai navigateur, écran par écran, avec deux sessions (hôte et conducteur), y compris la désactivation puis la réactivation d'un spot. Captures dans `tests/e2e/screenshots/` | ~2 min 30 |
 | `npm run test:e2e:payments` | Paiement Stripe en mode test : blocage du montant, carte de test Visa, prélèvement du montant réel, libération à l'annulation, tentatives de fraude | ~1 min 30 |
 | `npm run test:e2e:availability` | Horaires (dont plages de nuit), fermetures, refus par la base, créneaux pris, « Disponible maintenant », puis l'écran de l'hôte et la fiche du conducteur dans le navigateur | ~1 min |
+| `npm run test:e2e:reviews` | Une vraie recharge, puis avis croisés (API et navigateur), double aveugle, moyennes, fiche du spot | ~2 min 30 |
 | `npm run test:e2e` | API + navigateur à la suite | ~4 min |
 
 **Mise en place (une seule fois)**
