@@ -22,6 +22,9 @@ export function SpotsExplorer() {
   const [spots, setSpots] = useState<NearbySpot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Spots où l'on peut démarrer une recharge d'au moins 1 h maintenant (null : inconnu)
+  const [openNow, setOpenNow] = useState<Set<string> | null>(null);
+  const [onlyOpen, setOnlyOpen] = useState(false);
 
   const search = useCallback(async (c: LatLng, radiusM: number) => {
     setLoading(true);
@@ -32,9 +35,17 @@ export function SpotsExplorer() {
       p_radius_m: radiusM,
       p_limit: 200,
     });
+    if (error) {
+      setLoading(false);
+      return setError(error.message);
+    }
+    const found = (data ?? []) as NearbySpot[];
+    const open = found.length
+      ? await createClient().rpc("spots_open_now", { p_ids: found.map((s) => s.id) })
+      : { data: [], error: null };
+    setOpenNow(open.error ? null : new Set((open.data ?? []) as string[]));
+    setSpots(found);
     setLoading(false);
-    if (error) setError(error.message);
-    else setSpots((data ?? []) as NearbySpot[]);
   }, []);
 
   // Position initiale
@@ -50,6 +61,8 @@ export function SpotsExplorer() {
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
     );
   }, [search]);
+
+  const shown = onlyOpen && openNow ? spots.filter((s) => openNow.has(s.id)) : spots;
 
   return (
     <div className="mt-4 grid gap-3">
@@ -68,25 +81,35 @@ export function SpotsExplorer() {
           ))}
         </div>
         <p className="text-sm text-muted" aria-live="polite">
-          {loading ? "Recherche…" : `${spots.length} spot${spots.length > 1 ? "s" : ""}`}
+          {loading ? "Recherche…" : `${shown.length} spot${shown.length > 1 ? "s" : ""}`}
         </p>
       </div>
+      {openNow && (
+        <button
+          type="button"
+          aria-pressed={onlyOpen}
+          onClick={() => setOnlyOpen((v) => !v)}
+          className={`justify-self-start rounded-full border px-3 py-1 text-sm ${onlyOpen ? "border-accent bg-accent/10 font-medium text-accent" : "border-line text-muted"}`}
+        >
+          {onlyOpen ? "✓ " : ""}Disponible maintenant
+        </button>
+      )}
 
       {error && <p className="text-sm text-danger">{error}</p>}
 
       {!center ? (
         <div className="h-[62dvh] animate-pulse rounded-2xl bg-soft" aria-label="Localisation…" />
       ) : view === "map" ? (
-        <SpotsMap center={center} spots={spots} onSearchArea={search} />
+        <SpotsMap center={center} spots={shown} onSearchArea={search} />
       ) : (
-        <SpotList spots={spots} loading={loading} />
+        <SpotList spots={shown} loading={loading} openNow={openNow} />
       )}
     </div>
   );
 }
 
-function SpotList({ spots, loading }: { spots: NearbySpot[]; loading: boolean }) {
-  if (!loading && spots.length === 0) return <p className="text-muted">Aucun spot dans cette zone.</p>;
+function SpotList({ spots, loading, openNow }: { spots: NearbySpot[]; loading: boolean; openNow: Set<string> | null }) {
+  if (!loading && spots.length === 0) return <p className="text-muted">Aucun spot disponible dans cette zone.</p>;
   return (
     <ul className="grid gap-3">
       {spots.map((s) => (
@@ -95,6 +118,11 @@ function SpotList({ spots, loading }: { spots: NearbySpot[]; loading: boolean })
             <div>
               <p className="font-semibold">{s.title}</p>
               <p className="text-sm text-muted">{CONNECTOR_LABELS[s.connector_type]} · {s.power_kw} kW</p>
+              {openNow && (
+                <p className={`text-xs ${openNow.has(s.id) ? "text-accent" : "text-subtle"}`}>
+                  {openNow.has(s.id) ? "● Libre maintenant" : "Pas disponible maintenant"}
+                </p>
+              )}
             </div>
             <div className="text-right">
               <p className="font-semibold text-accent">{eur(s.price_per_kwh)}<span className="text-xs text-subtle">/kWh</span></p>

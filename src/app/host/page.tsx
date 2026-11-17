@@ -5,6 +5,8 @@ import { SpotForm } from "@/components/spot-form";
 import { SpotQr } from "@/components/spot-qr";
 import { SpotActiveToggle } from "@/components/spot-active-toggle";
 import { HostPayouts } from "@/components/host-payouts";
+import { SpotHoursEditor } from "@/components/spot-hours-editor";
+import type { SpotClosure, SpotHour } from "@/lib/availability";
 import { Suspense } from "react";
 
 export const metadata = { title: "Mes spots" };
@@ -22,6 +24,18 @@ export default async function HostPage() {
     .order("is_active", { ascending: false })
     .order("created_at", { ascending: false });
   const spots = (data ?? []) as Spot[];
+
+  // Horaires et fermetures à venir de tous les spots (vides si la migration n'est pas encore appliquée)
+  const ids = spots.map((s) => s.id);
+  const today = new Date().toISOString().slice(0, 10);
+  const [{ data: hoursRows }, { data: closureRows }] = ids.length
+    ? await Promise.all([
+        supabase.from("spot_hours").select("spot_id, weekday, opens, closes").in("spot_id", ids),
+        supabase.from("spot_closures").select("id, spot_id, starts_on, ends_on, reason").in("spot_id", ids).gte("ends_on", today).order("starts_on"),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const hoursOf = (id: string) => ((hoursRows ?? []) as (SpotHour & { spot_id: string })[]).filter((h) => h.spot_id === id);
+  const closuresOf = (id: string) => ((closureRows ?? []) as (SpotClosure & { spot_id: string })[]).filter((c) => c.spot_id === id);
 
   return (
     <section className="grid gap-6">
@@ -48,6 +62,7 @@ export default async function HostPage() {
             </span>
           </div>
           {!s.is_active && <p className="text-sm text-muted">Masqué de la carte : aucune nouvelle réservation possible.</p>}
+          {s.is_active && <SpotHoursEditor spotId={s.id} hours={hoursOf(s.id)} closures={closuresOf(s.id)} />}
           {s.is_active && <SpotQr spotId={s.id} title={s.title} />}
           <SpotActiveToggle spotId={s.id} isActive={s.is_active} />
         </article>
