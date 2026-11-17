@@ -46,21 +46,25 @@ try {
     console.log("ℹ️  Paiement pas encore obligatoire (app_settings.payments_required = false)");
   }
   const a = await pay(D.c, "authorize", b1);
-  ok(a.http === 200 && !!a.client_secret, "Conducteur : demande d'autorisation acceptée", a.error ?? `${(a.amount_cents / 100).toFixed(2)} € à bloquer`);
+  ok(a.http === 200 && (a.status === "authorized" || !!a.client_secret), "Conducteur : demande d'autorisation acceptée", a.error ?? `${(a.amount_cents / 100).toFixed(2)} € à bloquer`);
   const expected = Math.ceil(22 * 1 * 2 * 1.05 * 100); // 22 kW × ~1 h restante × 2 €/kWh × 1,05
   ok(Math.abs(a.amount_cents - expected) <= 100, "Montant bloqué = puissance × durée restante × tarif × 1,05", `${a.amount_cents} cts (attendu ≈ ${expected})`);
-  const pending = await paymentRow(D.c, b1);
-  ok(pending?.status === "requires_authorization", "Base : paiement en attente de la carte", pending?.status);
   expectErr(await D.c.from("payments").update({ status: "authorized" }).eq("booking_id", b1).select(), "Conducteur : impossible de se marquer « payé » directement");
   expectErr(await D.c.from("payments").insert({ booking_id: b1, stripe_payment_intent_id: "pi_fake", status: "authorized", amount_authorized_cents: 1 }), "Conducteur : impossible d'inventer un paiement");
-  const s0 = await pay(D.c, "sync", b1);
-  ok(s0.http === 200 && s0.status === "requires_authorization", "Sans carte validée, la synchro ne marque pas « autorisé »", JSON.stringify(s0));
-
-  // 2. Carte de test (ce que fait le formulaire Stripe dans le navigateur)
-  const conf = await confirmWithTestCard(a.client_secret);
-  ok(conf.status === "requires_capture", "Stripe : carte de test validée, montant bloqué (non prélevé)", conf.status ?? conf.error?.message);
-  const s1 = await pay(D.c, "sync", b1);
-  ok(s1.http === 200 && s1.status === "authorized" && (await paymentRow(D.c, b1))?.status === "authorized", "Base : paiement « authorized » après vérification auprès de Stripe");
+  if (a.status === "authorized") {
+    // 2. Carte enregistrée à la demande : le montant est bloqué directement, sans ressaisie
+    ok(a.saved_card === true && (await paymentRow(D.c, b1))?.status === "authorized", "Carte enregistrée : montant bloqué directement chez Stripe, sans ressaisie");
+  } else {
+    const pending = await paymentRow(D.c, b1);
+    ok(pending?.status === "requires_authorization", "Base : paiement en attente de la carte", pending?.status);
+    const s0 = await pay(D.c, "sync", b1);
+    ok(s0.http === 200 && s0.status === "requires_authorization", "Sans carte validée, la synchro ne marque pas « autorisé »", JSON.stringify(s0));
+    // 2. Carte de test (ce que fait le formulaire Stripe dans le navigateur)
+    const conf = await confirmWithTestCard(a.client_secret);
+    ok(conf.status === "requires_capture", "Stripe : carte de test validée, montant bloqué (non prélevé)", conf.status ?? conf.error?.message);
+    const s1 = await pay(D.c, "sync", b1);
+    ok(s1.http === 200 && s1.status === "authorized" && (await paymentRow(D.c, b1))?.status === "authorized", "Base : paiement « authorized » après vérification auprès de Stripe");
+  }
   const again = await pay(D.c, "authorize", b1);
   ok(again.http === 200 && again.status === "authorized" && !again.client_secret, "Ré-autoriser ne bloque pas une seconde fois");
   ok((await paymentRow(H.c, b1))?.status === "authorized", "Hôte : voit le paiement de sa réservation");
@@ -77,7 +81,7 @@ try {
   const { data: ns } = await D.c.from("bookings").insert({ spot_id: spot2.id, driver_id: D.id, start_at: new Date(Date.now() + 10_000).toISOString(), end_at: new Date(Date.now() + 40_000).toISOString() }).select("id").single();
   await H.c.rpc("respond_booking", { p_booking_id: ns.id, p_accept: true });
   const nsAuth = await pay(D.c, "authorize", ns.id);
-  await confirmWithTestCard(nsAuth.client_secret);
+  if (nsAuth.client_secret) await confirmWithTestCard(nsAuth.client_secret);
   await pay(D.c, "sync", ns.id);
   ok((await paymentRow(D.c, ns.id))?.status === "authorized", "Non honorée : montant bloqué avant le créneau (le conducteur ne viendra pas)");
 
@@ -133,7 +137,7 @@ try {
   await D.c.rpc("cancel_booking", { p_booking_id: b2 });
   const b3 = await book(2, 32);
   const a3 = await pay(D.c, "authorize", b3);
-  await confirmWithTestCard(a3.client_secret);
+  if (a3.client_secret) await confirmWithTestCard(a3.client_secret);
   await pay(D.c, "sync", b3);
   await D.c.rpc("cancel_booking", { p_booking_id: b3 });
   const rel = await pay(D.c, "release", b3);

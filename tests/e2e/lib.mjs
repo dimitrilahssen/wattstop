@@ -53,6 +53,8 @@ export async function login(role) {
     if (!data.session)
       throw new Error(`Compte ${role} créé mais non confirmé : désactivez « Confirm email » le temps du premier lancement, ou créez-le dans Authentication > Users > Add user (Auto Confirm).`);
   }
+  // Le conducteur de test a toujours une carte enregistrée (exigée pour réserver quand le paiement est obligatoire)
+  if (role === "driver" && STRIPE_PK && (await paymentsRequired(c))) await ensureTestCard(c);
   return { c, id: data.user.id };
 }
 
@@ -131,4 +133,30 @@ export async function payWithTestCard(c, bookingId) {
   const s = await callPayments(c, "sync", bookingId);
   if (s.status !== "authorized") throw new Error(`Paiement non autorisé : ${JSON.stringify(s)}`);
   return a;
+}
+
+/** Ce que fait Stripe.js pour enregistrer une carte : confirmer le SetupIntent avec la clé PUBLIQUE. */
+export async function confirmSetupWithTestCard(clientSecret, paymentMethod = "pm_card_visa") {
+  const id = clientSecret.split("_secret_")[0];
+  const res = await fetch(`https://api.stripe.com/v1/setup_intents/${id}/confirm`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${STRIPE_PK}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_secret: clientSecret, payment_method: paymentMethod }),
+  });
+  return res.json();
+}
+
+/** Enregistre la carte de test Visa du conducteur si besoin (SetupIntent : rien n'est prélevé). */
+export async function ensureTestCard(c, { force = false, paymentMethod = "pm_card_visa" } = {}) {
+  if (!force) {
+    const { data } = await c.from("driver_cards").select("stripe_payment_method_id").maybeSingle();
+    if (data?.stripe_payment_method_id) return null;
+  }
+  const s = await callPayments(c, "card_setup");
+  if (!s.client_secret) throw new Error(`Enregistrement de carte impossible : ${s.error}`);
+  const conf = await confirmSetupWithTestCard(s.client_secret, paymentMethod);
+  if (conf.status !== "succeeded") throw new Error(`Carte de test refusée : ${conf.error?.message ?? conf.status}`);
+  const r = await callPayments(c, "card_sync", undefined, { setup_intent_id: s.setup_intent_id });
+  if (r.http !== 200) throw new Error(`Carte non enregistrée : ${r.error}`);
+  return r.card;
 }

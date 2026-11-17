@@ -6,6 +6,7 @@ import { BookingForm } from "@/components/booking-form";
 import { SpotAvailabilityCard } from "@/components/spot-availability-card";
 import type { BusySlot, SpotClosure, SpotHour } from "@/lib/availability";
 import { SpotReviews } from "@/components/spot-reviews";
+import { DEFAULT_POLICY, POLICY_COLUMNS, type CancellationPolicy } from "@/lib/cancellation";
 import { ratingLabel, type ProfileRating, type SpotRating, type SpotReview } from "@/lib/ratings";
 
 export default async function SpotPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +26,7 @@ export default async function SpotPage({ params }: { params: Promise<{ id: strin
     { data: spotRating },
     { data: hostRating },
     { data: reviews },
+    { data: settings },
   ] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("spot_hours").select("weekday, opens, closes").eq("spot_id", id),
@@ -33,7 +35,9 @@ export default async function SpotPage({ params }: { params: Promise<{ id: strin
     supabase.rpc("spot_ratings", { p_ids: [id] }),
     supabase.rpc("profile_ratings", { p_ids: [spot.host_id] }),
     supabase.rpc("spot_reviews", { p_spot_id: id, p_limit: 10 }),
+    supabase.from("app_settings").select(POLICY_COLUMNS).maybeSingle(),
   ]);
+  const policy: CancellationPolicy = { ...DEFAULT_POLICY, ...((settings ?? {}) as Partial<CancellationPolicy>) };
   const hr = ((hostRating ?? []) as ProfileRating[])[0];
   // Tables absentes (migration pas encore appliquée) : le spot reste réservable à toute heure
   const h = (hours ?? []) as SpotHour[];
@@ -61,7 +65,7 @@ export default async function SpotPage({ params }: { params: Promise<{ id: strin
         />
       )}
       {user && user.id !== spot.host_id ? (
-        <BookingForm spotId={spot.id} driverId={user.id} hours={h} closures={c} busy={b} />
+        <BookingForm spotId={spot.id} driverId={user.id} hours={h} closures={c} busy={b} policy={policy} />
       ) : !user ? (
         <a href={`/login?next=/spots/${spot.id}`} className="btn-primary">Se connecter pour réserver</a>
       ) : (

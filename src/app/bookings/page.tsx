@@ -7,6 +7,8 @@ import { PushToggle } from "@/components/push-toggle";
 import { ReviewForm } from "@/components/review-form";
 import { Stars } from "@/components/stars";
 import { ratingLabel, REVIEW_DAYS, type ProfileRating, type Review } from "@/lib/ratings";
+import { DEFAULT_POLICY, feesActive, freeCancellationUntil, lateCancellation, POLICY_COLUMNS, type CancellationPolicy } from "@/lib/cancellation";
+import { SavedCard } from "@/components/saved-card";
 import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus, type PayoutStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
@@ -87,10 +89,15 @@ export default async function BookingsPage() {
   // Bases sans la migration des avis : listes vides, la page s'affiche normalement.
   const ids = bookings.map((b) => b.id);
   const driverIds = [...new Set(bookings.filter((b) => b.host_id === user?.id).map((b) => b.driver_id))];
-  const [{ data: reviewRows }, { data: ratingRows }] = await Promise.all([
+  const [{ data: reviewRows }, { data: ratingRows }, { data: feeRows }, { data: settings }] = await Promise.all([
     ids.length ? supabase.from("reviews").select("*").in("booking_id", ids) : Promise.resolve({ data: [] }),
     driverIds.length ? supabase.rpc("profile_ratings", { p_ids: driverIds }) : Promise.resolve({ data: [] }),
+    ids.length ? supabase.from("booking_fees").select("booking_id, kind, amount_cents, status, payout_status, host_amount_cents").in("booking_id", ids) : Promise.resolve({ data: [] }),
+    supabase.from("app_settings").select(POLICY_COLUMNS).maybeSingle(),
   ]);
+  const policy: CancellationPolicy = { ...DEFAULT_POLICY, ...((settings ?? {}) as Partial<CancellationPolicy>) };
+  const fees = new Map(((feeRows ?? []) as Fee[]).map((f) => [f.booking_id, f]));
+  const isDriver = bookings.some((b) => b.driver_id === user?.id);
   const reviews = (reviewRows ?? []) as Review[];
   const driverRatings = new Map(((ratingRows ?? []) as ProfileRating[]).map((r) => [r.user_id, r]));
   const reviewsEnabled = reviewRows !== null;
@@ -99,6 +106,13 @@ export default async function BookingsPage() {
     <section className="grid gap-4">
       <h1 className="text-2xl font-bold">Réservations</h1>
       <PushToggle />
+      {paymentsEnabled && policy.payments_required && isDriver && (
+        <section className="card grid gap-2" data-testid="my-card">
+          <h2 className="font-semibold">💳 Ma carte</h2>
+          <p className="text-sm text-muted">Garantit vos réservations ; au démarrage, elle sert au paiement sans ressaisie.</p>
+          <SavedCard manage />
+        </section>
+      )}
       {bookings.length === 0 && <p className="text-muted">Aucune réservation pour l&apos;instant.</p>}
       {bookings.map((b) => {
         const asHost = b.host_id === user?.id;
@@ -131,6 +145,14 @@ export default async function BookingsPage() {
               <p className="text-sm">{kwh(b.energy_kwh ?? 0)} · <strong>{eur(b.total_price)}</strong></p>
             )}
             {b.payment && <PaymentLine payment={b.payment} asHost={asHost} />}
+            {fees.get(b.id) && <FeeLine fee={fees.get(b.id)!} asHost={asHost} />}
+            {!asHost && b.status === "confirmed" && feesActive(policy) && (
+              <p className="text-xs text-subtle" data-testid="cancel-hint">
+                {lateCancellation(b, policy)
+                  ? `Annulation : ${eur(policy.cancellation_fee_cents / 100)} de frais, reversés à l'hôte.`
+                  : `Annulation gratuite jusqu'au ${dateTime(freeCancellationUntil(b, policy).toISOString())}.`}
+              </p>
+            )}
             {asHost && b.status === "awaiting_meter" && b.checked_in_at && b.checked_out_at && b.auto_closed_at && (
               <MeterDeclaration
                 bookingId={b.id}
@@ -159,7 +181,7 @@ export default async function BookingsPage() {
             {canReview && (
               <ReviewForm bookingId={b.id} targetLabel={asHost ? "le conducteur" : "l'hôte et son spot"} deadline={dateTime(reviewDeadline.toISOString())} />
             )}
-            <BookingActions booking={b} asHost={asHost} />
+            <BookingActions booking={b} asHost={asHost} policy={policy} />
           </article>
         );
       })}
@@ -200,6 +222,43 @@ function PaymentLine({
   return (
     <p className="text-sm text-muted" data-testid="payment-line">
       💳 {text[p.status]}
+    </p>
+  );
+}
+
+type Fee = {
+  booking_id: string;
+  kind: "late_cancellation" | "no_show";
+  amount_cents: number;
+  status: "pending" | "charged" | "failed" | "waived";
+  payout_status: PayoutStatus;
+  host_amount_cents: number | null;
+};
+
+/** Frais d'annulation tardive ou d'absence : prélevés au conducteur, reversés à l'hôte. */
+function FeeLine({ fee: f, asHost }: { fee: Fee; asHost: boolean }) {
+  const amount = eur(f.amount_cents / 100);
+  const what = f.kind === "no_show" ? "d'absence" : "d'annulation tardive";
+  const text = asHost
+    ? f.status === "charged"
+      ? f.payout_status === "transferred"
+        ? `Dédommagement ${what} : ${eur((f.host_amount_cents ?? f.amount_cents) / 100)} reversés sur votre compte`
+        : `Dédommagement ${what} : ${amount} encaissés · reversement en attente : activez vos paiements dans Mes spots`
+      : f.status === "pending"
+        ? `Dédommagement ${what} : ${amount} en cours de prélèvement`
+        : f.status === "failed"
+          ? `Dédommagement ${what} : prélèvement de ${amount} refusé par la banque du conducteur`
+          : `Pas de dédommagement`
+    : f.status === "charged"
+      ? `Frais ${what} : ${amount} prélevés, reversés à l'hôte`
+      : f.status === "pending"
+        ? `Frais ${what} : ${amount} en cours de prélèvement`
+        : f.status === "failed"
+          ? `Frais ${what} : ${amount} non réglés (carte refusée)`
+          : `Frais ${what} annulés`;
+  return (
+    <p className="text-sm text-muted" data-testid="fee-line">
+      💸 {text}
     </p>
   );
 }

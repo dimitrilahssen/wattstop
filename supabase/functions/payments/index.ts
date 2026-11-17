@@ -22,6 +22,13 @@
 //                     une seule notification par (réservation, statut), contenu toujours relu en base
 //   push_reminders  : (tâche toutes les 5 min) rappel au conducteur 10 min avant la fin de son créneau
 //   push_test       : (utilisateur connecté) notification de test sur ses propres appareils
+// Carte enregistrée du conducteur (garantie de la réservation, rien n'est prélevé à l'enregistrement) :
+//   card_setup  : (conducteur) crée le client Stripe si besoin → client_secret d'un SetupIntent
+//   card_sync   : (conducteur) relit le SetupIntent chez Stripe et enregistre la carte (marque, 4 chiffres)
+//   card_remove : (conducteur) retire sa carte, si aucune réservation ni frais n'est en cours
+// Frais d'annulation tardive / d'absence (décidés par la base, table booking_fees) :
+//   charge_fees : (déclencheur SQL + tâche toutes les 10 min, sans connexion) prélève les frais en attente
+//                 sur la carte enregistrée, puis reverse la part de l'hôte. Ne prélève que ce que la base a décidé.
 // Hôte (Stripe Connect, comptes Express) :
 //   connect_onboard   : crée le compte Stripe de l'hôte si besoin → lien du formulaire Stripe (origin requis)
 //   connect_status    : relit l'état du compte chez Stripe, transfère les sommes en attente
@@ -81,6 +88,22 @@ type Payment = {
   host_amount_cents?: number | null;
   platform_fee_cents?: number | null;
   stripe_transfer_id?: string | null;
+};
+type DriverCard = {
+  driver_id: string;
+  stripe_customer_id: string;
+  stripe_payment_method_id: string | null;
+  card_brand: string | null;
+  card_last4: string | null;
+};
+type Fee = {
+  booking_id: string;
+  kind: "late_cancellation" | "no_show";
+  amount_cents: number;
+  status: "pending" | "charged" | "failed" | "waived";
+  stripe_payment_intent_id: string | null;
+  payout_status: string;
+  host_amount_cents: number | null;
 };
 type PayoutAccount = {
   host_id: string;
@@ -166,6 +189,42 @@ async function authorize(b: Booking, userId: string) {
   }
 
   const amount = holdCents(b);
+
+  // Carte enregistrée : blocage direct, sans ressaisie. Si la banque demande une validation
+  // (3-D Secure) ou refuse, on retombe sur le formulaire de carte classique.
+  const card = await loadCard(b.driver_id);
+  if (card?.stripe_payment_method_id) {
+    try {
+      const saved = await stripe.paymentIntents.create(
+        {
+          amount,
+          currency: "eur",
+          capture_method: "manual",
+          customer: card.stripe_customer_id,
+          payment_method: card.stripe_payment_method_id,
+          confirm: true,
+          automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+          description: `WattStop · ${b.spot?.title ?? "recharge"}`,
+          metadata: { booking_id: b.id, driver_id: b.driver_id, host_id: b.host_id },
+        },
+        { idempotencyKey: `authorize-saved-${b.id}-${existing?.stripe_payment_intent_id ?? "first"}` },
+      );
+      if (saved.status === "requires_capture") {
+        await insertPayment({
+          booking_id: b.id,
+          stripe_payment_intent_id: saved.id,
+          status: "authorized",
+          amount_authorized_cents: amount,
+          amount_captured_cents: null,
+        });
+        return { status: "authorized", amount_cents: amount, saved_card: true };
+      }
+      await stripe.paymentIntents.cancel(saved.id).catch(() => {});
+    } catch (e) {
+      console.error("Carte enregistrée non utilisable, formulaire de carte", b.id, (e as Error).message);
+    }
+  }
+
   const pi = await stripe.paymentIntents.create(
     {
       amount,
@@ -326,6 +385,10 @@ async function notifyBooking(bookingId: string) {
     .maybeSingle();
   if (!b) return { sent: 0 };
   const spot = (b.spot as { title?: string } | null)?.title ?? "Spot";
+  // Frais décidés par la base (annulation tardive, absence) : mentionnés dans le message
+  const fee = ["cancelled", "no_show"].includes(b.status)
+    ? ((await admin.from("booking_fees").select("amount_cents").eq("booking_id", b.id).maybeSingle()).data as { amount_cents: number } | null)
+    : null;
   const out: { to: string; msg: PushMessage }[] = [];
   const host = (title: string, body = spot) => out.push({ to: b.host_id, msg: { title, body } });
   const driver = (title: string, body = spot) => out.push({ to: b.driver_id, msg: { title, body } });
@@ -334,8 +397,12 @@ async function notifyBooking(bookingId: string) {
     case "confirmed": driver("✅ Réservation acceptée"); break;
     case "rejected": driver("Réservation refusée par l'hôte"); break;
     case "cancelled":
-      if (b.cancelled_by === b.driver_id) host("Réservation annulée par le conducteur");
-      else if (b.cancelled_by === b.host_id) driver("Réservation annulée par l'hôte");
+      if (b.cancelled_by === b.driver_id) {
+        if (fee) {
+          host("Réservation annulée tardivement par le conducteur", `${spot} · ${euro(fee.amount_cents / 100)} de dédommagement pour vous`);
+          driver("Annulation tardive", `${spot} · ${euro(fee.amount_cents / 100)} de frais, reversés à l'hôte`);
+        } else host("Réservation annulée par le conducteur");
+      } else if (b.cancelled_by === b.host_id) driver("Réservation annulée par l'hôte");
       break;
     case "active": host("⚡ Recharge démarrée"); break;
     case "completed": {
@@ -349,8 +416,8 @@ async function notifyBooking(bookingId: string) {
       host("⏰ Demande expirée sans réponse");
       break;
     case "no_show":
-      host("Le conducteur ne s'est pas présenté");
-      driver("Réservation non honorée : créneau terminé sans recharge");
+      host("Le conducteur ne s'est pas présenté", fee ? `${spot} · ${euro(fee.amount_cents / 100)} de dédommagement pour vous` : spot);
+      driver("Réservation non honorée : créneau terminé sans recharge", fee ? `${spot} · ${euro(fee.amount_cents / 100)} de frais d'absence, reversés à l'hôte` : spot);
       break;
     case "awaiting_meter":
       host("⏰ Recharge oubliée : déclarez les kWh relevés");
@@ -415,14 +482,38 @@ async function refreshAccount(hostId: string): Promise<PayoutAccount | null> {
  * Renvoie l'état du reversement.
  */
 async function payoutPayment(p: Payment, hostId: string, account?: PayoutAccount | null): Promise<string> {
-  const captured = p.amount_captured_cents ?? 0;
-  if (p.status !== "captured" || captured <= 0) return "none";
-  if (p.payout_status === "transferred") return "transferred";
+  if (p.status !== "captured") return "none";
+  return payoutRow("payments", p.booking_id, p.stripe_payment_intent_id, p.amount_captured_cents ?? 0, p.payout_status, hostId, account);
+}
+
+/** Reverse à l'hôte des frais d'annulation tardive ou d'absence prélevés. */
+async function payoutFee(f: Fee, hostId: string, account?: PayoutAccount | null): Promise<string> {
+  if (f.status !== "charged" || !f.stripe_payment_intent_id) return "none";
+  return payoutRow("booking_fees", f.booking_id, f.stripe_payment_intent_id, f.amount_cents, f.payout_status, hostId, account);
+}
+
+/** Transfert idempotent de la part de l'hôte (paiement de recharge ou frais), état enregistré dans la table. */
+async function payoutRow(
+  table: "payments" | "booking_fees",
+  bookingId: string,
+  paymentIntentId: string,
+  captured: number,
+  payoutStatus: string | undefined,
+  hostId: string,
+  account?: PayoutAccount | null,
+): Promise<string> {
+  const p = { booking_id: bookingId, stripe_payment_intent_id: paymentIntentId };
+  const save = async (fields: Record<string, unknown>) => {
+    const { error } = await admin.from(table).update(fields).eq("booking_id", bookingId);
+    if (error) throw new HttpError(500, error.message);
+  };
+  if (captured <= 0) return "none";
+  if (payoutStatus === "transferred") return "transferred";
   const fee = Math.round((captured * PLATFORM_FEE_PERCENT) / 100);
   const hostAmount = captured - fee;
   const acct = account === undefined ? await refreshAccount(hostId) : account;
   if (!acct?.transfers_active) {
-    await updatePayment(p.booking_id, { payout_status: "awaiting_host_account", host_amount_cents: hostAmount, platform_fee_cents: fee });
+    await save({ payout_status: "awaiting_host_account", host_amount_cents: hostAmount, platform_fee_cents: fee });
     return "awaiting_host_account";
   }
   try {
@@ -435,11 +526,11 @@ async function payoutPayment(p: Payment, hostId: string, account?: PayoutAccount
         // Lié au paiement : le transfert part même si les fonds ne sont pas encore disponibles
         source_transaction: typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge?.id,
         transfer_group: `booking_${p.booking_id}`,
-        metadata: { booking_id: p.booking_id, host_id: hostId },
+        metadata: { booking_id: p.booking_id, host_id: hostId, kind: table === "payments" ? "charge" : "fee" },
       },
-      { idempotencyKey: `transfer-${p.booking_id}` },
+      { idempotencyKey: table === "payments" ? `transfer-${p.booking_id}` : `transfer-fee-${p.booking_id}` },
     );
-    await updatePayment(p.booking_id, {
+    await save({
       payout_status: "transferred",
       host_amount_cents: hostAmount,
       platform_fee_cents: fee,
@@ -449,7 +540,7 @@ async function payoutPayment(p: Payment, hostId: string, account?: PayoutAccount
   } catch (e) {
     // On réessaiera au prochain passage (ouverture de « Mes spots », nouveau prélèvement…)
     console.error("Transfert à l'hôte impossible", p.booking_id, e);
-    await updatePayment(p.booking_id, { payout_status: "awaiting_host_account", host_amount_cents: hostAmount, platform_fee_cents: fee });
+    await save({ payout_status: "awaiting_host_account", host_amount_cents: hostAmount, platform_fee_cents: fee });
     return "awaiting_host_account";
   }
 }
@@ -465,6 +556,17 @@ async function sweepHost(hostId: string, account: PayoutAccount | null) {
   for (const p of (data ?? []) as Payment[]) {
     const state = await payoutPayment(p, hostId, account);
     const amount = p.host_amount_cents ?? Math.round((p.amount_captured_cents ?? 0) * (1 - PLATFORM_FEE_PERCENT / 100));
+    if (state === "transferred") transferred += amount;
+    else if (state === "awaiting_host_account") pending += amount;
+  }
+  const { data: fees } = await admin
+    .from("booking_fees")
+    .select("*, booking:bookings!inner(host_id)")
+    .eq("booking.host_id", hostId)
+    .eq("status", "charged");
+  for (const f of (fees ?? []) as Fee[]) {
+    const state = await payoutFee(f, hostId, account);
+    const amount = f.host_amount_cents ?? Math.round(f.amount_cents * (1 - PLATFORM_FEE_PERCENT / 100));
     if (state === "transferred") transferred += amount;
     else if (state === "awaiting_host_account") pending += amount;
   }
@@ -537,6 +639,142 @@ async function connectDashboard(user: { id: string }) {
   return { url: link.url };
 }
 
+// ---------------------------------------------------------------------------
+// Carte enregistrée et frais d'annulation
+// ---------------------------------------------------------------------------
+
+async function loadCard(driverId: string): Promise<DriverCard | null> {
+  const { data } = await admin.from("driver_cards").select("*").eq("driver_id", driverId).maybeSingle();
+  return data as DriverCard | null;
+}
+
+/** Client Stripe du conducteur (créé une seule fois). */
+async function ensureCustomer(user: { id: string; email?: string }): Promise<DriverCard> {
+  const existing = await loadCard(user.id);
+  if (existing) return existing;
+  const customer = await stripe.customers.create(
+    { email: user.email, metadata: { driver_id: user.id } },
+    { idempotencyKey: `customer-${user.id}` },
+  );
+  const { error } = await admin.from("driver_cards").insert({ driver_id: user.id, stripe_customer_id: customer.id });
+  if (error) {
+    const again = await loadCard(user.id); // un autre appel a gagné la course
+    if (again) return again;
+    throw new HttpError(500, error.message);
+  }
+  return { driver_id: user.id, stripe_customer_id: customer.id, stripe_payment_method_id: null, card_brand: null, card_last4: null };
+}
+
+async function cardSetup(user: { id: string; email?: string }) {
+  const card = await ensureCustomer(user);
+  const si = await stripe.setupIntents.create({
+    customer: card.stripe_customer_id,
+    usage: "off_session",
+    automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+    metadata: { driver_id: user.id },
+  });
+  return { client_secret: si.client_secret, setup_intent_id: si.id };
+}
+
+async function cardSync(user: { id: string }, body: Record<string, unknown>) {
+  const id = body.setup_intent_id;
+  if (typeof id !== "string" || !/^seti_[A-Za-z0-9]+$/.test(id)) throw new HttpError(400, "setup_intent_id invalide");
+  const card = await loadCard(user.id);
+  if (!card) throw new HttpError(404, "Aucune carte en cours d'enregistrement");
+  const si = await stripe.setupIntents.retrieve(id);
+  if (si.customer !== card.stripe_customer_id) throw new HttpError(403, "Accès refusé");
+  if (si.status !== "succeeded" || !si.payment_method) throw new HttpError(409, "Carte pas encore validée");
+  const pmId = typeof si.payment_method === "string" ? si.payment_method : si.payment_method.id;
+  const pm = await stripe.paymentMethods.retrieve(pmId);
+  await stripe.customers.update(card.stripe_customer_id, { invoice_settings: { default_payment_method: pmId } });
+  const previous = card.stripe_payment_method_id;
+  const fields = {
+    stripe_payment_method_id: pmId,
+    card_brand: pm.card?.brand ?? pm.type,
+    card_last4: pm.card?.last4 ?? null,
+    card_exp_month: pm.card?.exp_month ?? null,
+    card_exp_year: pm.card?.exp_year ?? null,
+  };
+  const { error } = await admin.from("driver_cards").update(fields).eq("driver_id", user.id);
+  if (error) throw new HttpError(500, error.message);
+  if (previous && previous !== pmId) await stripe.paymentMethods.detach(previous).catch(() => {});
+  return { card: { brand: fields.card_brand, last4: fields.card_last4, exp_month: fields.card_exp_month, exp_year: fields.card_exp_year } };
+}
+
+async function cardRemove(user: { id: string }) {
+  const card = await loadCard(user.id);
+  if (!card?.stripe_payment_method_id) return { removed: false };
+  const { count } = await admin
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("driver_id", user.id)
+    .in("status", ["pending", "confirmed", "active", "awaiting_meter"]);
+  if (count) throw new HttpError(409, "Annulez ou terminez d'abord vos réservations en cours");
+  const { data: fees } = await admin.from("booking_fees").select("booking_id, booking:bookings!inner(driver_id)").eq("booking.driver_id", user.id).eq("status", "pending");
+  if (fees?.length) throw new HttpError(409, "Des frais sont en cours de règlement");
+  await stripe.paymentMethods.detach(card.stripe_payment_method_id).catch(() => {});
+  await admin.from("driver_cards").update({ stripe_payment_method_id: null, card_brand: null, card_last4: null, card_exp_month: null, card_exp_year: null }).eq("driver_id", user.id);
+  return { removed: true };
+}
+
+/**
+ * Prélève les frais d'annulation tardive / d'absence en attente (décidés par la base), sur la carte
+ * enregistrée, puis reverse la part de l'hôte. Idempotent : une clé Stripe par réservation.
+ */
+async function chargeFees(bookingId?: string) {
+  let q = admin.from("booking_fees").select("*").eq("status", "pending").limit(50);
+  if (bookingId) q = q.eq("booking_id", bookingId);
+  const { data, error } = await q;
+  if (error) throw new HttpError(500, error.message);
+  let charged = 0, failed = 0;
+  for (const f of (data ?? []) as Fee[]) {
+    const { data: b } = await admin.from("bookings").select("id, driver_id, host_id, spot:spots(title)").eq("id", f.booking_id).maybeSingle();
+    if (!b) continue;
+    const save = (fields: Record<string, unknown>) => admin.from("booking_fees").update(fields).eq("booking_id", f.booking_id);
+    if (f.amount_cents < MIN_CHARGE_CENTS) {
+      await save({ status: "waived" });
+      continue;
+    }
+    const card = await loadCard(b.driver_id);
+    if (!card?.stripe_payment_method_id) {
+      await save({ status: "failed", failure_message: "Aucune carte enregistrée" });
+      failed++;
+      continue;
+    }
+    const label = f.kind === "no_show" ? "absence" : "annulation tardive";
+    try {
+      const pi = await stripe.paymentIntents.create(
+        {
+          amount: f.amount_cents,
+          currency: "eur",
+          customer: card.stripe_customer_id,
+          payment_method: card.stripe_payment_method_id,
+          off_session: true,
+          confirm: true,
+          description: `WattStop · frais d'${label} · ${(b.spot as { title?: string } | null)?.title ?? "spot"}`,
+          metadata: { booking_id: b.id, driver_id: b.driver_id, host_id: b.host_id, kind: f.kind },
+        },
+        { idempotencyKey: `fee-${f.booking_id}` },
+      );
+      if (pi.status !== "succeeded") {
+        await save({ status: "failed", stripe_payment_intent_id: pi.id, failure_message: `Paiement ${pi.status}` });
+        failed++;
+        continue;
+      }
+      await save({ status: "charged", stripe_payment_intent_id: pi.id, failure_message: null });
+      charged++;
+      await payoutFee({ ...f, status: "charged", stripe_payment_intent_id: pi.id }, b.host_id);
+    } catch (e) {
+      if (e instanceof Stripe.errors.StripeIdempotencyError) continue; // l'autre appel s'en charge
+      const err = e as { message?: string; payment_intent?: { id?: string } };
+      console.error("Frais non prélevés", f.booking_id, err.message);
+      await save({ status: "failed", stripe_payment_intent_id: err.payment_intent?.id ?? null, failure_message: err.message ?? "Paiement refusé" });
+      failed++;
+    }
+  }
+  return { charged, failed };
+}
+
 async function release(b: Booking, userId: string) {
   if (b.driver_id !== userId && b.host_id !== userId) throw new HttpError(403, "Accès refusé");
   if (["active", "completed"].includes(b.status)) throw new HttpError(409, "Recharge en cours ou terminée");
@@ -561,6 +799,11 @@ Deno.serve(async (req) => {
     if (action === "release_stale") return json(await releaseStale());
     if (action === "push_public_key") return json({ public_key: (await getVapid()).publicKey });
     if (action === "push_reminders") return json(await pushReminders());
+    if (action === "charge_fees") {
+      if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant");
+      const id = typeof booking_id === "string" && /^[0-9a-f-]{36}$/i.test(booking_id) ? booking_id : undefined;
+      return json(await chargeFees(id));
+    }
     if (action === "notify_booking") {
       if (typeof booking_id !== "string" || !/^[0-9a-f-]{36}$/i.test(booking_id)) throw new HttpError(400, "booking_id invalide");
       return json(await notifyBooking(booking_id));
@@ -570,6 +813,13 @@ Deno.serve(async (req) => {
     if (action === "push_test") {
       const sent = await pushTo(user.id, { title: "🔔 Notifications WattStop activées", body: "Vous serez prévenu de vos réservations, même app fermée." });
       return json({ sent });
+    }
+
+    const cardActions = { card_setup: cardSetup, card_sync: cardSync, card_remove: cardRemove } as const;
+    const cardHandler = cardActions[action as keyof typeof cardActions];
+    if (cardHandler) {
+      if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant");
+      return json(await cardHandler(user, body));
     }
 
     const hostActions = { connect_onboard: connectOnboard, connect_status: connectStatus, connect_dashboard: connectDashboard } as const;

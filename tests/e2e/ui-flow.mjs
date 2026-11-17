@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { sessionCookies, wire } from "./browser.mjs";
+import { callPayments, paymentsRequired } from "./lib.mjs";
 import { SUPABASE_URL, BASE_URL, USERS, CHARGE_SECONDS, TEST_PREFIX, login, reporter, sleep, crash, hideTestSpots, cancelOpenBookings } from "./lib.mjs";
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "screenshots");
@@ -27,6 +28,9 @@ try {
   const H = await login("host"), D = await login("driver");
   await cancelOpenBookings(D.c);
   await hideTestSpots(H.c, H.id);
+  // Carte retirée : le conducteur l'enregistre dans le formulaire de réservation, comme un nouvel utilisateur
+  const withCard = await paymentsRequired(D.c);
+  if (withCard) await callPayments(D.c, "card_remove");
 
   browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
   const errors = [];
@@ -85,6 +89,23 @@ try {
   await driver.getByLabel("Début").fill(local(startAt));
   await driver.getByLabel("Fin").fill(local(new Date(Date.now() + 62 * 60000)));
   await driver.getByPlaceholder(/Message/).fill("Bonjour, j'arrive dans 5 min !");
+  if (withCard) {
+    // Carte de garantie saisie dans le vrai formulaire Stripe (SetupIntent : rien n'est prélevé)
+    ok(await driver.getByTestId("cancellation-policy").isVisible().catch(() => false), "Réservation : règle d'annulation affichée");
+    ok(!(await driver.getByRole("button", { name: /Demander la réservation/ }).isEnabled()), "Réservation : impossible sans carte enregistrée");
+    await driver.getByRole("button", { name: /Enregistrer une carte/ }).click();
+    const frame = driver.frameLocator('iframe[title*="paiement"], iframe[title*="payment"], iframe[name^="__privateStripeFrame"]').first();
+    await frame.locator('input[name="number"]').waitFor({ timeout: 60000 });
+    await frame.locator('input[name="number"]').fill("4242424242424242");
+    await frame.locator('input[name="expiry"]').fill("12 / 34");
+    await frame.locator('input[name="cvc"]').fill("123");
+    const zip = frame.locator('input[name="postalCode"]');
+    if (await zip.isVisible().catch(() => false)) await zip.fill("75011");
+    await shot(driver, "conducteur-carte");
+    await driver.getByRole("button", { name: "Enregistrer la carte" }).click();
+    await driver.getByText(/Visa •••• 4242/).waitFor({ timeout: 60000 }).catch(() => {});
+    ok(await driver.getByText(/Visa •••• 4242/).isVisible(), "Réservation : carte Visa •••• 4242 enregistrée");
+  }
   await shot(driver, "conducteur-reservation");
   // L'hôte reste sur « Mes spots » : la demande doit lui arriver en direct, sans recharger
   await host.goto(`${BASE_URL}/host`);
@@ -140,6 +161,11 @@ try {
   await driver.locator('[data-testid="payment-step"], button.btn-primary:not([disabled]):has-text("Démarrer la recharge")').first().waitFor({ timeout: 30000 });
   if (await paymentStep.isVisible().catch(() => false)) {
     await paymentStep.getByRole("button", { name: /Continuer vers le paiement/ }).click();
+    // Carte enregistrée : montant bloqué directement, sans ressaisie
+    await driver.locator('button.btn-primary:not([disabled]):has-text("Démarrer la recharge"), iframe[name^="__privateStripeFrame"]').first().waitFor({ timeout: 60000 }).catch(() => {});
+  }
+  if (withCard) ok(await driver.getByRole("button", { name: /Démarrer la recharge/ }).isEnabled().catch(() => false), "Paiement : carte enregistrée utilisée, montant bloqué sans ressaisie");
+  if (!withCard && (await paymentStep.isVisible().catch(() => false))) {
     const stripeFrame = driver.frameLocator('iframe[title*="paiement"], iframe[title*="payment"], iframe[name^="__privateStripeFrame"]').first();
     const number = stripeFrame.locator('input[name="number"]');
     await number.waitFor({ timeout: 60000 });
@@ -149,7 +175,6 @@ try {
     await stripeFrame.locator('input[name="cvc"]').fill("123");
     const postal = stripeFrame.locator('input[name="postalCode"]');
     if (await postal.isVisible().catch(() => false)) await postal.fill("75011");
-    await shot(driver, "conducteur-carte");
     await paymentStep.getByRole("button", { name: /Valider la carte/ }).click();
     await driver.getByRole("button", { name: /Démarrer la recharge/ }).waitFor({ timeout: 60000 }).catch(() => {});
     ok(await driver.getByRole("button", { name: /Démarrer la recharge/ }).isEnabled().catch(() => false), "Paiement : carte de test validée, démarrage possible");

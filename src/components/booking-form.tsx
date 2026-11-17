@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -10,6 +10,9 @@ import {
   type SpotClosure,
   type SpotHour,
 } from "@/lib/availability";
+import { SavedCard } from "@/components/saved-card";
+import { paymentsEnabled } from "@/lib/payments";
+import { feesActive, policySentence, type CancellationPolicy } from "@/lib/cancellation";
 
 const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 
@@ -19,12 +22,14 @@ export function BookingForm({
   hours = [],
   closures = [],
   busy = [],
+  policy,
 }: {
   spotId: string;
   driverId: string;
   hours?: SpotHour[];
   closures?: SpotClosure[];
   busy?: BusySlot[];
+  policy?: CancellationPolicy;
 }) {
   const router = useRouter();
   const checker = useMemo(() => availabilityChecker(hours, closures, busy), [hours, closures, busy]);
@@ -34,6 +39,10 @@ export function BookingForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [noSlot, setNoSlot] = useState(false);
+  // Carte enregistrée exigée par la base quand le paiement est obligatoire
+  const cardRequired = paymentsEnabled && !!policy?.payments_required;
+  const [hasCard, setHasCard] = useState(false);
+  const onCard = useCallback((has: boolean) => setHasCard(has), []);
 
   // Créneau proposé par défaut : le premier libre dans 30 min ou plus (calculé côté navigateur)
   useEffect(() => {
@@ -104,9 +113,16 @@ export function BookingForm({
           )}
         </div>
       )}
+      {cardRequired && (
+        <div className="grid gap-2 border-t border-line pt-3">
+          <p className="text-sm font-medium">Carte de garantie</p>
+          <SavedCard onChange={onCard} intro="Enregistrez une carte pour envoyer votre demande. Rien n'est prélevé maintenant : au démarrage, seule l'énergie consommée est payée." />
+          {policy && feesActive(policy) && <p className="text-xs text-subtle" data-testid="cancellation-policy">{policySentence(policy)}</p>}
+        </div>
+      )}
       <textarea className="input" maxLength={500} placeholder="Message pour l'hôte (optionnel)" value={note} onChange={(e) => setNote(e.target.value)} />
       {error && <p className="text-sm text-danger">{error}</p>}
-      <button className="btn-primary" disabled={loading || !start || !end || !!problem}>{loading ? "Envoi…" : "Demander la réservation"}</button>
+      <button className="btn-primary" disabled={loading || !start || !end || !!problem || (cardRequired && !hasCard)}>{loading ? "Envoi…" : "Demander la réservation"}</button>
     </form>
   );
 }

@@ -24,6 +24,19 @@ export async function callPayments(action: Action, bookingId: string): Promise<P
 
 export const centsToEur = (cents: number) => cents / 100;
 
+// ---------- Carte enregistrée du conducteur ----------
+export type SavedCard = { brand: string | null; last4: string | null; exp_month: number | null; exp_year: number | null };
+
+/** Actions sur la carte enregistrée (SetupIntent Stripe : rien n'est prélevé). */
+export async function callCard<T>(action: "card_setup" | "card_sync" | "card_remove", extra: Record<string, unknown> = {}): Promise<T> {
+  const { data, error } = await createClient().functions.invoke(PAYMENTS_FUNCTION, { body: { action, ...extra } });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? error.message);
+  }
+  return data as T;
+}
+
 // ---------- Reversement aux hôtes (Stripe Connect) ----------
 export type PayoutStatus = "none" | "awaiting_host_account" | "transferred" | "failed";
 export type ConnectStatus = {
