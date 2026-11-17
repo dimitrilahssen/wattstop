@@ -39,8 +39,9 @@ export function BookingForm({
   useEffect(() => {
     const slot = checker.nextSlot(Date.now() + 30 * 60_000);
     if (slot) {
-      setStart(toLocalInput(slot.start));
-      setEnd(toLocalInput(slot.end));
+      // Sans écraser ce que l'utilisateur aurait déjà saisi pendant le chargement
+      setStart((v) => v || toLocalInput(slot.start));
+      setEnd((v) => v || toLocalInput(slot.end));
     } else {
       setNoSlot(true);
     }

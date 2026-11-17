@@ -1,6 +1,6 @@
 # Suivi du projet WattStop
 
-_Dernière mise à jour : 16/11/2026_
+_Dernière mise à jour : 17/11/2026_
 
 ## Fait et testé (sur la vraie base Supabase)
 
@@ -52,7 +52,16 @@ Branchées et testées côté serveur (`npm run test:e2e:push`, 14/14) : clés V
 Reste à vérifier à la main la réception réelle : app en local sur PC (Chrome, Edge ou Firefox), Réservations → « Activer les notifications » → une notification de test doit apparaître. Sur téléphone : nécessite l'app en ligne (https) ; sur iPhone, l'ajouter d'abord à l'écran d'accueil.
 Derniers résultats : push 14/14, paiement 33/33, API 41/41, navigateur 38/38.
 
+## Horaires de disponibilité
+
+En place et testés sur la vraie base (`npm run test:e2e:availability`, 37/37) : l'hôte règle ses plages hebdomadaires (plages de nuit possibles, modèles en un clic) et ses fermetures ponctuelles ; la base refuse les réservations hors horaires ; la fiche du spot affiche horaires, fermetures et créneaux pris, et propose le prochain créneau libre ; filtre « Disponible maintenant » sur la carte.
+Migration `20261118000000_spot_availability.sql` appliquée.
+Derniers résultats : horaires 37/37, API 41/41, navigateur 38/38, paiement 33/33, push 14/14.
+
 ## Ensuite (idées)
+
+- Avis et notes après chaque recharge (conducteur ↔ hôte)
+- Règle d'annulation (gratuite jusqu'à 2 h avant, puis petit montant reversé à l'hôte)
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
 - Passage en mode réel Stripe (clés live) quand le compte sera vérifié

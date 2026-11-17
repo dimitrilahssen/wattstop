@@ -71,6 +71,15 @@ En plus des notifications en direct (app ouverte), WattStop envoie des notificat
 - Chaque changement de statut d'une réservation déclenche un appel `pg_net` vers la fonction (`notify_booking`), qui relit la réservation en base et notifie le bon destinataire, une seule fois par statut (`push_log`). Les clés VAPID sont générées par la fonction et stockées dans `push_config`, illisible côté navigateur.
 - Migration `20261117000000_push_notifications.sql`. Test : `npm run test:e2e:push`.
 
+## Horaires de disponibilité
+Chaque hôte règle, depuis « Mes spots » (bloc « 🕒 Horaires et fermetures »), quand son spot peut être réservé :
+- Plages hebdomadaires, éventuellement de nuit (18:00 → 08:00 se termine le lendemain ; 00:00 → 00:00 = toute la journée). Sans plage, le spot est réservable à toute heure.
+- Fermetures ponctuelles (vacances, travaux), du jour J au jour J' inclus, avec un motif visible des conducteurs.
+- La base refuse toute réservation hors horaires ou pendant une fermeture (trigger `bookings_within_hours`), en plus de l'interdiction de chevauchement.
+- Fiche du spot : horaires, fermetures et créneaux déjà pris (`spot_busy_slots`, sans dire par qui) ; le formulaire propose le premier créneau libre et bloque un créneau impossible.
+- Carte : filtre « Disponible maintenant » (`spots_open_now` : au moins 1 h de recharge possible tout de suite).
+- Heures exprimées à l'heure du spot (`spots.timezone`, Europe/Paris). Migration `20261118000000_spot_availability.sql`. Test : `npm run test:e2e:availability`.
+
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
 
@@ -79,6 +88,7 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 | `npm run test:e2e:api` | Le parcours hôte → conducteur via l'API, plus ~15 tentatives de triche qui doivent échouer (lire la clé QR d'un autre, forcer un prix, s'auto-confirmer, déclarer trop de kWh…) | ~1 min 30 |
 | `npm run test:e2e:ui` | Le même parcours dans un vrai navigateur, écran par écran, avec deux sessions (hôte et conducteur), y compris la désactivation puis la réactivation d'un spot. Captures dans `tests/e2e/screenshots/` | ~2 min 30 |
 | `npm run test:e2e:payments` | Paiement Stripe en mode test : blocage du montant, carte de test Visa, prélèvement du montant réel, libération à l'annulation, tentatives de fraude | ~1 min 30 |
+| `npm run test:e2e:availability` | Horaires (dont plages de nuit), fermetures, refus par la base, créneaux pris, « Disponible maintenant », puis l'écran de l'hôte et la fiche du conducteur dans le navigateur | ~1 min |
 | `npm run test:e2e` | API + navigateur à la suite | ~4 min |
 
 **Mise en place (une seule fois)**
