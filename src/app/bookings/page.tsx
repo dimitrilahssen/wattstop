@@ -57,7 +57,8 @@ export default async function BookingsPage() {
 
   // La RLS ne renvoie que les réservations où l'on est conducteur OU hôte.
   const BASE = "*, spot:spots(title, address, power_kw), driver:profiles!bookings_driver_id_fkey(full_name)";
-  const list = (columns: string) => supabase.from("bookings").select(columns).order("start_at", { ascending: false }).limit(50);
+  // Les 50 réservations à l'activité la plus récente (une annulée il y a longtemps ne masque pas une recharge d'hier)
+  const list = (columns: string) => supabase.from("bookings").select(columns).order("updated_at", { ascending: false }).limit(50);
   let { data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents, payout_status, host_amount_cents)`);
   // Bases plus anciennes : sans les colonnes de reversement, puis sans la table payments
   if (error) ({ data, error } = await list(`${BASE}, payment:payments(status, amount_authorized_cents, amount_captured_cents)`));
@@ -69,6 +70,13 @@ export default async function BookingsPage() {
     driver: { full_name: string | null } | null;
     payment: Payment | null;
   })[];
+  // En haut : ce qui demande une action (en attente, acceptée, en charge, relevé à saisir), par date de début ;
+  // ensuite l'historique, du plus récemment modifié au plus ancien.
+  const OPEN = ["pending", "confirmed", "active", "awaiting_meter"];
+  const isOpen = (b: Booking) => OPEN.includes(b.status);
+  bookings.sort((a, b) =>
+    isOpen(a) !== isOpen(b) ? (isOpen(a) ? -1 : 1) : isOpen(a) ? a.start_at.localeCompare(b.start_at) : 0
+  );
 
   // Filet de sécurité : une recharge terminée dont le montant est encore seulement bloqué
   // (page fermée trop tôt…) est prélevée maintenant. Le montant vient de la base, pas du client.

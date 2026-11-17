@@ -64,9 +64,15 @@ En place et testés sur la vraie base (`npm run test:e2e:reviews`, 28/28) : note
 Migration `20261119000000_reviews.sql` appliquée.
 Derniers résultats : avis 28/28, horaires 37/37, API 41/41, navigateur 38/38, paiement 33/33, push 14/14.
 
+## Règle d'annulation
+
+En place et testée sur la vraie base et Stripe (`npm run test:e2e:cancellation`, 26/26) : carte enregistrée exigée pour réserver (rien n'est prélevé), blocage au scan sans ressaisie, annulation gratuite (demande en attente, plus de 2 h avant, ou 10 min de grâce), 2 € prélevés en cas d'annulation tardive ou d'absence et reversés à l'hôte, confirmation avant une annulation payante.
+Migration `20261120000000_cancellation_policy.sql` appliquée, fonction mise à jour.
+Réservations : les réservations en cours s'affichent en premier, puis l'historique par activité récente.
+Derniers résultats : annulation 26/26, API 41/41, navigateur 40/40, paiement 30/30, horaires 37/37, avis 28/28, push 14/14.
+
 ## Ensuite (idées)
 
-- Règle d'annulation (gratuite jusqu'à 2 h avant, puis petit montant reversé à l'hôte)
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
 - Passage en mode réel Stripe (clés live) quand le compte sera vérifié

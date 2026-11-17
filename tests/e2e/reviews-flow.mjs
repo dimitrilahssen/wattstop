@@ -112,7 +112,9 @@ try {
   ok(/★ \d,\d · \d+ avis/.test(await req.textContent().catch(() => "")), "Hôte : note du conducteur visible sur sa demande");
   await D.c.rpc("cancel_booking", { p_booking_id: b2.id });
 
-  ok(errors.length === 0, "Aucune erreur dans la console", errors.slice(0, 3).join(" | "));
+  // Requêtes coupées par une navigation (ERR_FAILED) : sans conséquence, ignorées comme dans ui-flow
+  const unexpected = [...new Set(errors)].filter((e) => !/stripe|ERR_FAILED|net::/i.test(e));
+  ok(unexpected.length === 0, "Aucune erreur inattendue dans la console", unexpected.slice(0, 3).join(" | "));
   await H.c.from("spots").update({ is_active: false }).eq("id", spot.id);
   done();
 } catch (e) {

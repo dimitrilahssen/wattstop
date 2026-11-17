@@ -87,6 +87,12 @@ Après une recharge terminée, le conducteur note l'hôte et l'hôte note le con
 - Affichage : moyenne et derniers avis sur la fiche du spot (`spot_ratings`, `spot_reviews`, prénom de l'auteur seulement), note sous chaque spot de la liste, note du conducteur sur les demandes reçues par l'hôte (`profile_ratings`).
 - Migration `20261119000000_reviews.sql`. Test : `npm run test:e2e:reviews`.
 
+## Règle d'annulation
+- Pour envoyer une demande, le conducteur enregistre une carte (SetupIntent Stripe, rien n'est prélevé) ; la base refuse une demande sans carte quand le paiement est obligatoire. Au scan, le montant maximal est bloqué directement sur cette carte (formulaire de carte seulement si la banque demande une validation).
+- Annulation gratuite : demande pas encore acceptée, jusqu'à 2 h avant le début, ou dans les 10 min qui suivent la demande. Sinon (annulation tardive par le conducteur) ou en cas d'absence (`no_show`) : 2 € de frais, prélevés sur la carte et reversés à l'hôte. L'hôte qui annule ne déclenche aucun frais.
+- Les frais sont décidés par la base (`booking_fees`, déclencheur sur le statut) puis prélevés par la fonction (`charge_fees` : appel immédiat via pg_net + passage toutes les 10 min). Réglages dans `app_settings` : `cancellation_fee_cents`, `free_cancellation_minutes`, `cancellation_grace_minutes`.
+- Migration `20261120000000_cancellation_policy.sql` + fonction à jour. Test : `npm run test:e2e:cancellation` (~12 min).
+
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
 
@@ -97,6 +103,7 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 | `npm run test:e2e:payments` | Paiement Stripe en mode test : blocage du montant, carte de test Visa, prélèvement du montant réel, libération à l'annulation, tentatives de fraude | ~1 min 30 |
 | `npm run test:e2e:availability` | Horaires (dont plages de nuit), fermetures, refus par la base, créneaux pris, « Disponible maintenant », puis l'écran de l'hôte et la fiche du conducteur dans le navigateur | ~1 min |
 | `npm run test:e2e:reviews` | Une vraie recharge, puis avis croisés (API et navigateur), double aveugle, moyennes, fiche du spot | ~2 min 30 |
+| `npm run test:e2e:cancellation` | Carte enregistrée exigée, annulations gratuites, annulation tardive et absence facturées 2 € puis reversées à l'hôte, confirmation dans le navigateur | ~12 min |
 | `npm run test:e2e` | API + navigateur à la suite | ~4 min |
 
 **Mise en place (une seule fois)**
