@@ -93,6 +93,13 @@ Après une recharge terminée, le conducteur note l'hôte et l'hôte note le con
 - Les frais sont décidés par la base (`booking_fees`, déclencheur sur le statut) puis prélevés par la fonction (`charge_fees` : appel immédiat via pg_net + passage toutes les 10 min). Réglages dans `app_settings` : `cancellation_fee_cents`, `free_cancellation_minutes`, `cancellation_grace_minutes`.
 - Migration `20261120000000_cancellation_policy.sql` + fonction à jour. Test : `npm run test:e2e:cancellation` (~12 min).
 
+## Messagerie
+Chaque réservation a sa conversation conducteur ↔ hôte (bouton « 💬 Messages » dans Réservations) : ouverte tant que la réservation est en cours, puis 24 h après sa fin ou son annulation (ensuite en lecture seule).
+- Envoi par la base (`send_booking_message` : auteur posé par la base, 1000 caractères, 10 messages par minute au plus) ; lecture réservée aux deux participants (RLS).
+- En direct (Realtime), pastille « non lu », « Lu » sous son dernier message (`mark_booking_messages_read`), messages rapides.
+- Notification dans l'app quand la conversation est fermée, et push au destinataire (déclencheur → fonction, action `notify_message`, une fois par message).
+- Migration `20261121000000_booking_messages.sql` + fonction à jour. Test : `npm run test:e2e:chat`.
+
 ## Tests de bout en bout
 Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la seule clé publique : les règles de sécurité (RLS) sont donc réellement mises à l'épreuve.
 
@@ -104,6 +111,7 @@ Deux scripts rejouent le parcours complet sur la vraie base Supabase, avec la se
 | `npm run test:e2e:availability` | Horaires (dont plages de nuit), fermetures, refus par la base, créneaux pris, « Disponible maintenant », puis l'écran de l'hôte et la fiche du conducteur dans le navigateur | ~1 min |
 | `npm run test:e2e:reviews` | Une vraie recharge, puis avis croisés (API et navigateur), double aveugle, moyennes, fiche du spot | ~2 min 30 |
 | `npm run test:e2e:cancellation` | Carte enregistrée exigée, annulations gratuites, annulation tardive et absence facturées 2 € puis reversées à l'hôte, confirmation dans le navigateur | ~12 min |
+| `npm run test:e2e:chat` | Messagerie : sécurité, non lus, push sans doublon, conversation en direct dans deux navigateurs, notification dans l'app | ~1 min 30 |
 | `npm run test:e2e` | API + navigateur à la suite | ~4 min |
 
 **Mise en place (une seule fois)**

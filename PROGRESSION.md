@@ -1,6 +1,6 @@
 # Suivi du projet WattStop
 
-_Dernière mise à jour : 17/11/2026_
+_Dernière mise à jour : 18/11/2026_
 
 ## Fait et testé (sur la vraie base Supabase)
 
@@ -71,7 +71,17 @@ Migration `20261120000000_cancellation_policy.sql` appliquée, fonction mise à 
 Réservations : les réservations en cours s'affichent en premier, puis l'historique par activité récente.
 Derniers résultats : annulation 26/26, API 41/41, navigateur 40/40, paiement 30/30, horaires 37/37, avis 28/28, push 14/14.
 
+## Messagerie
+
+En place et testée sur la vraie base (`npm run test:e2e:chat`, 21/21) : conversation par réservation, en direct, non lus et « Lu », messages rapides, notification dans l'app et push, limite anti-abus.
+Migration `20261121000000_booking_messages.sql` appliquée, fonction mise à jour.
+Derniers résultats : messagerie 21/21, API 41/41, navigateur 40/40, paiement 30/30, horaires 37/37, avis 28/28, push 14/14, annulation 26/26.
+Remarque : ne pas lancer `npm run build` pendant que `npm run dev` tourne (abîme le cache `.next` du serveur de dev ; le supprimer et relancer si besoin).
+
 ## Ensuite (idées)
+
+- Filtres de recherche sur la carte (type de prise, puissance, prix maximal)
+- Tableau de bord de l'hôte (revenus, kWh, recharges, note)
 
 
 - Commission WattStop (secret `PLATFORM_FEE_PERCENT` de la fonction)
