@@ -9,6 +9,8 @@ import { Stars } from "@/components/stars";
 import { ratingLabel, REVIEW_DAYS, type ProfileRating, type Review } from "@/lib/ratings";
 import { DEFAULT_POLICY, feesActive, freeCancellationUntil, lateCancellation, POLICY_COLUMNS, type CancellationPolicy } from "@/lib/cancellation";
 import { SavedCard } from "@/components/saved-card";
+import { BookingChat } from "@/components/booking-chat";
+import { chatOpen } from "@/lib/chat";
 import { PAYMENTS_FUNCTION, paymentsEnabled, type PaymentStatus, type PayoutStatus } from "@/lib/payments";
 
 export const metadata = { title: "Mes réservations" };
@@ -103,6 +105,14 @@ export default async function BookingsPage() {
     ids.length ? supabase.from("booking_fees").select("booking_id, kind, amount_cents, status, payout_status, host_amount_cents").in("booking_id", ids) : Promise.resolve({ data: [] }),
     supabase.from("app_settings").select(POLICY_COLUMNS).maybeSingle(),
   ]);
+  // Messagerie : conversations qui ont des messages, et messages reçus non lus (vide sans la migration)
+  const { data: msgRows } = ids.length
+    ? await supabase.from("booking_messages").select("booking_id, sender_id, read_at").in("booking_id", ids).limit(2000)
+    : { data: [] };
+  const withMessages = new Set((msgRows ?? []).map((m) => m.booking_id as string));
+  const unreadBy = new Map<string, number>();
+  for (const m of msgRows ?? []) if (!m.read_at && m.sender_id !== user?.id) unreadBy.set(m.booking_id, (unreadBy.get(m.booking_id) ?? 0) + 1);
+  const chatEnabled = msgRows !== null;
   const policy: CancellationPolicy = { ...DEFAULT_POLICY, ...((settings ?? {}) as Partial<CancellationPolicy>) };
   const fees = new Map(((feeRows ?? []) as Fee[]).map((f) => [f.booking_id, f]));
   const isDriver = bookings.some((b) => b.driver_id === user?.id);
@@ -131,7 +141,7 @@ export default async function BookingsPage() {
         const driverRating = asHost ? driverRatings.get(b.driver_id) : undefined;
         const driverLabel = ratingLabel(driverRating?.driver_avg, driverRating?.driver_count);
         return (
-          <article key={b.id} className="card grid gap-2">
+          <article key={b.id} id={`booking-${b.id}`} className="card grid scroll-mt-4 gap-2">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="font-semibold">{b.spot?.title}</p>
@@ -188,6 +198,17 @@ export default async function BookingsPage() {
             )}
             {canReview && (
               <ReviewForm bookingId={b.id} targetLabel={asHost ? "le conducteur" : "l'hôte et son spot"} deadline={dateTime(reviewDeadline.toISOString())} />
+            )}
+            {chatEnabled && user && (
+              <BookingChat
+                bookingId={b.id}
+                meId={user.id}
+                role={asHost ? "host" : "driver"}
+                otherLabel={asHost ? (b.driver?.full_name?.split(" ")[0] ?? "le conducteur") : "l'hôte"}
+                canWrite={chatOpen(b)}
+                unread={unreadBy.get(b.id) ?? 0}
+                hasMessages={withMessages.has(b.id)}
+              />
             )}
             <BookingActions booking={b} asHost={asHost} policy={policy} />
           </article>

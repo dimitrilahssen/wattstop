@@ -74,6 +74,7 @@ export interface Booking {
   total_price: number | null;
   driver_note: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ResolvedQr {

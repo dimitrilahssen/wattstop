@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { eur, kwh } from "@/lib/format";
-import { isSelfAction, liveStore } from "@/lib/live-store";
+import { isChatOpen, isSelfAction, liveStore } from "@/lib/live-store";
+import type { ChatMessage } from "@/lib/chat";
 import type { Booking } from "@/types/db";
 
 type Change = RealtimePostgresChangesPayload<Booking>;
@@ -85,6 +86,22 @@ export function LiveBookings() {
     async function start(userId: string, accessToken: string) {
       await stop();
       await supabase.realtime.setAuth(accessToken);
+      // Nouveaux messages de la messagerie (la RLS ne laisse passer que ceux de ses réservations)
+      const chat = supabase
+        .channel(`messages-${userId}`)
+        .on<ChatMessage>("postgres_changes", { event: "INSERT", schema: "public", table: "booking_messages" }, (change) => {
+          const m = change.new as ChatMessage;
+          if (!m?.id || m.sender_id === userId) return;
+          const path = pathRef.current;
+          if (path.startsWith("/bookings")) {
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => router.refresh(), 300);
+          }
+          if (isChatOpen(m.booking_id)) return;
+          const body = m.body.length > 80 ? `${m.body.slice(0, 77)}…` : m.body;
+          liveStore.push({ title: "💬 Nouveau message", body, href: `/bookings?chat=${m.booking_id}#booking-${m.booking_id}` }, !path.startsWith("/bookings"));
+        })
+        .subscribe();
       channels = (["host", "driver"] as const).map((role) =>
         supabase
           .channel(`bookings-${role}-${userId}`)
@@ -95,6 +112,7 @@ export function LiveBookings() {
           )
           .subscribe()
       );
+      channels.push(chat);
     }
 
     async function stop() {

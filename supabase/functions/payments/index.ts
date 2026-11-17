@@ -22,6 +22,8 @@
 //                     une seule notification par (réservation, statut), contenu toujours relu en base
 //   push_reminders  : (tâche toutes les 5 min) rappel au conducteur 10 min avant la fin de son créneau
 //   push_test       : (utilisateur connecté) notification de test sur ses propres appareils
+//   notify_message  : (déclencheur SQL, sans connexion) nouveau message de la messagerie → destinataire ;
+//                     contenu relu en base, une seule notification par message
 // Carte enregistrée du conducteur (garantie de la réservation, rien n'est prélevé à l'enregistrement) :
 //   card_setup  : (conducteur) crée le client Stripe si besoin → client_secret d'un SetupIntent
 //   card_sync   : (conducteur) relit le SetupIntent chez Stripe et enregistre la carte (marque, 4 chiffres)
@@ -436,6 +438,30 @@ async function notifyBooking(bookingId: string) {
   return { status: b.status, claimed: true, sent };
 }
 
+/** Nouveau message d'une conversation : notifie l'autre participant de la réservation. */
+async function notifyMessage(messageId: string) {
+  const { data: m } = await admin
+    .from("booking_messages")
+    .select("id, booking_id, sender_id, body, booking:bookings(driver_id, host_id, spot:spots(title))")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (!m) return { sent: 0 };
+  const b = m.booking as unknown as { driver_id: string; host_id: string; spot: { title?: string } | null } | null;
+  if (!b) return { sent: 0 };
+  const to = m.sender_id === b.driver_id ? b.host_id : b.driver_id;
+  if (!(await claim(m.booking_id, `msg:${m.id}`))) return { claimed: false, sent: 0 };
+  const { data: sender } = await admin.from("profiles").select("full_name").eq("id", m.sender_id).maybeSingle();
+  const name = (sender?.full_name ?? "").trim().split(/\s+/)[0] || (m.sender_id === b.driver_id ? "Le conducteur" : "L'hôte");
+  const text = m.body.length > 140 ? `${m.body.slice(0, 137)}…` : m.body;
+  const sent = await pushTo(to, {
+    title: `💬 ${name} · ${b.spot?.title ?? "Réservation"}`,
+    body: text,
+    url: `/bookings#booking-${m.booking_id}`,
+    tag: `chat-${m.booking_id}`,
+  });
+  return { claimed: true, sent };
+}
+
 /** Rappel au conducteur 10 minutes avant la fin d'une recharge en cours. */
 async function pushReminders() {
   const now = Date.now();
@@ -803,6 +829,11 @@ Deno.serve(async (req) => {
       if (!Deno.env.get("STRIPE_SECRET_KEY")) throw new HttpError(500, "STRIPE_SECRET_KEY manquant");
       const id = typeof booking_id === "string" && /^[0-9a-f-]{36}$/i.test(booking_id) ? booking_id : undefined;
       return json(await chargeFees(id));
+    }
+    if (action === "notify_message") {
+      const id = body.message_id;
+      if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(400, "message_id invalide");
+      return json(await notifyMessage(id));
     }
     if (action === "notify_booking") {
       if (typeof booking_id !== "string" || !/^[0-9a-f-]{36}$/i.test(booking_id)) throw new HttpError(400, "booking_id invalide");

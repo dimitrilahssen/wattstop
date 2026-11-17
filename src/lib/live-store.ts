@@ -50,3 +50,11 @@ export function isSelfAction(bookingId: string, status: string) {
   const at = selfActions.get(`${bookingId}:${status}`);
   return at !== undefined && Date.now() - at < 15_000;
 }
+
+/** Conversations actuellement ouvertes à l'écran : pas de notification pour leurs nouveaux messages. */
+const openChats = new Set<string>();
+export function setChatOpen(bookingId: string, open: boolean) {
+  if (open) openChats.add(bookingId);
+  else openChats.delete(bookingId);
+}
+export const isChatOpen = (bookingId: string) => openChats.has(bookingId);
