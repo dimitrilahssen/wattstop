@@ -16,7 +16,8 @@ export function DeleteAccount() {
     setError(null);
     try {
       await callFunction("account_delete");
-      await createClient().auth.signOut().catch(() => {});
+      // Déconnexion locale seulement : côté serveur, la session est déjà révoquée
+      await createClient().auth.signOut({ scope: "local" }).catch(() => {});
       router.push("/?compte=supprime");
       router.refresh();
     } catch (e) {

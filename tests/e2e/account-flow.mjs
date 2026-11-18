@@ -31,17 +31,27 @@ try {
   await hideTestSpots(H.c, H.id);
   browser = await chromium.launch();
   const errors = [];
+  const badResponses = [];
   const pageWith = async (cookies) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "fr-FR", timezoneId: "Europe/Paris" });
     await wire(ctx, errors);
     await ctx.addCookies(cookies);
-    return ctx.newPage();
+    const page = await ctx.newPage();
+    // Adresse exacte des réponses 4xx/5xx, pour un message d'erreur utile
+    page.on("response", (r) => {
+      if (r.status() < 403 || r.status() === 409) return;
+      const url = r.url().split("?")[0];
+      // Attendu : la déconnexion d'un compte qui vient d'être supprimé (session déjà révoquée côté serveur)
+      if (r.status() === 403 && url.endsWith("/auth/v1/logout")) return;
+      badResponses.push(`${r.status()} ${url}`);
+    });
+    return page;
   };
 
   // 1. Déconnexion (conducteur de test)
   const driver = await pageWith(await sessionCookies("driver"));
   await driver.goto(`${BASE_URL}/account`);
-  await driver.getByRole("heading", { name: "Mon compte" }).waitFor({ timeout: 15000 });
+  await driver.getByRole("heading", { name: "Mon compte", exact: true }).waitFor({ timeout: 15000 });
   ok((await driver.getByLabel(/Prénom et nom/).inputValue()) === USERS.driver.name, "Mon compte : prénom et nom pré-remplis");
   ok(await driver.getByRole("link", { name: /Compte/ }).getAttribute("aria-current") === "page", "Barre du bas : onglet « Compte » actif");
   await driver.getByRole("button", { name: "Se déconnecter" }).click();
@@ -117,7 +127,9 @@ try {
   expectErr(await N.c.from("spots").insert({ host_id: N.id, title: `${TEST_PREFIX} compte supprimé`, address: "1 rue", connector_type: "type2", power_kw: 7.4, price_per_kwh: 0.3, location: "SRID=4326;POINT(2.35 48.85)" }), "Ancienne session : plus de publication possible");
   void callPayments;
 
-  const unexpected = [...new Set(errors)].filter((e) => !/stripe|ERR_FAILED|net::|status of 40[19]/i.test(e));
+  ok(badResponses.length === 0, "Aucune requête refusée inattendue", badResponses.slice(0, 3).join(" | "));
+  // Les refus HTTP sont vérifiés ci-dessus, adresse par adresse
+  const unexpected = [...new Set(errors)].filter((e) => !/stripe|ERR_FAILED|net::|status of 40[139]/i.test(e));
   ok(unexpected.length === 0, "Aucune erreur inattendue dans la console", unexpected.slice(0, 3).join(" | "));
   await H.c.from("spots").update({ is_active: false }).eq("id", spot.id);
   void D;
